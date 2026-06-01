@@ -3,6 +3,9 @@
 The QoS (Quality of Service) test server for **RMBT / Open-RMBT** (the engine behind RTR-Netztest and
 similar measurement systems). Main class: `at.rtr.rmbt.qos.testserver.TestServer`.
 
+Open RMBT QoS is open source software, licensed under the **Apache License 2.0** — see
+[`LICENSE`](LICENSE).
+
 ---
 
 ## What it does
@@ -275,3 +278,12 @@ keytool -genkey -keyalg RSA -alias Qos -keystore qosserver.jks \
 - `legacy-tests/` — JUnit 4 + JMockit tests, excluded from the build (see `legacy-tests/README.md`).
 - `config.properties` — server configuration.
 - `PROTOCOL.md` — the client/server wire protocol.
+- `LICENSE` — Apache License 2.0.
+
+---
+
+## License
+
+Open RMBT QoS is open source software released under the **Apache License, Version 2.0**. The full
+license text is in [`LICENSE`](LICENSE), or at
+<https://www.apache.org/licenses/LICENSE-2.0>.

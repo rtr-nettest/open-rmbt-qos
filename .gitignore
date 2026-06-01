@@ -13,6 +13,9 @@
 # Logs / runtime
 *.log
 
+# Runtime watchdog file, regenerated on every start/stop
+guard.properties
+
 # OS
 .DS_Store
 Thumbs.db

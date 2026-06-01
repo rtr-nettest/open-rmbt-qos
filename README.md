@@ -3,21 +3,17 @@
 The QoS (Quality of Service) test server for **RMBT / Open-RMBT** (the engine behind RTR-Netztest and
 similar measurement systems). Main class: `at.rtr.rmbt.qos.testserver.TestServer`.
 
-This repository was extracted from the original multi-module `open-rmbt` project and modernized
-(Java 17, Maven, Logback logging, updated dependencies).
-
 ---
 
-## What the server does
+## What it does
 
-It is a standalone, long-running Java server that mobile/desktop probes (RMBT clients) connect to in
-order to run **QoS measurements**. Concretely, on startup it (see `TestServerImpl.run`):
+It is a standalone, long-running Java server that measurement probes (RMBT clients) connect to in
+order to run **QoS measurements**. On startup it:
 
-1. Binds a **TCP control port** (default `5233` via `config.properties`) on the configured
-   interface(s), optionally wrapped in **TLS/SSL**. Each accepted connection is handled by a
-   `ClientHandler` that speaks the line-based **QoS Testserver Protocol (QTP)** — see
-   [`PROTOCOL.md`](PROTOCOL.md). After a handshake (greeting + identity token) the client requests
-   individual QoS tests:
+1. Binds a **TCP control port** on the configured interface(s), optionally wrapped in **TLS**. Each
+   accepted connection is handled by a `ClientHandler` that speaks the line-based **QoS Testserver
+   Protocol (QTP)** — see [`PROTOCOL.md`](PROTOCOL.md). After a handshake (greeting + identity token)
+   the client requests individual QoS tests:
    - **TCP** connectivity tests (incoming / outgoing) on arbitrary ports,
    - **UDP** packet tests (incoming / outgoing) measuring packet loss and duplicates,
    - **VoIP / RTP** tests (jitter, loss, sequence) over non-blocking UDP ports,
@@ -25,47 +21,44 @@ order to run **QoS measurements**. Concretely, on startup it (see `TestServerImp
    - **Non-transparent proxy** (NTP) detection,
    - UDP port discovery and result queries.
 2. Opens the configured **UDP test ports** (a port range, an explicit list, and non-blocking "NIO"
-   ports required for VoIP) using `UdpMultiClientServer` / `NioUdpMultiClientServer`.
-3. Starts background **watcher services** (TCP/UDP) and a **runtime guard** (see
-   [guard.properties](#guardproperties)).
-4. Optionally starts a **REST monitoring interface** (see [REST interface](#rest-monitoring-interface)).
+   ports used for VoIP).
+3. Runs background **watcher services** (TCP/UDP) and a **runtime guard** (see
+   [`guard.properties`](#guardproperties)).
+4. Optionally serves a **REST monitoring interface** (see [REST monitoring interface](#rest-monitoring-interface)).
 5. Installs a Ctrl-C shutdown hook that closes sockets and records a clean shutdown.
 
-> The full wire protocol (commands, responses, appendices) is documented in
-> [`PROTOCOL.md`](PROTOCOL.md).
+The full wire protocol (commands, responses, appendices) is documented in [`PROTOCOL.md`](PROTOCOL.md).
 
 ---
 
-## Building
+## Building and running
 
-This is a standard Maven project producing a single runnable "fat" jar.
+Standard Maven project producing a single runnable "fat" jar:
 
 ```bash
 mvn package
 # -> target/RMBTQoSServer.jar   (Main-Class: at.rtr.rmbt.qos.testserver.TestServer)
 ```
 
-Run the unit tests only:
+Run the unit tests:
 
 ```bash
 mvn test
 ```
 
-### Supported JDKs
-
-The project targets **Java 17** bytecode (`maven.compiler.release = 17`) and is verified to build and
-test cleanly on **JDK 17, 21, 24 and 25** — i.e. it requires JDK 17 and builds on everything up to and
-including JDK 25.
-
-### Running
+Run the server:
 
 ```bash
-# Uses ./config.properties if present, otherwise the bundled defaults / CLI args
+# Uses ./config.properties if present, otherwise command-line args
 java -jar target/RMBTQoSServer.jar
 
 # Or with command-line options (see below)
-java -jar target/RMBTQoSServer.jar -p 5233 -u 10000 10050 -t 200
+java -jar target/RMBTQoSServer.jar -p 5234 -u 10000 10050 -t 200
 ```
+
+### Java versions
+
+Requires **Java 17**. It compiles and runs on **JDK 17 through 25** (`maven.compiler.release = 17`).
 
 ---
 
@@ -75,66 +68,57 @@ Settings are read by `ServerPreferences`. Precedence:
 
 - **No command-line arguments** → `config.properties` is loaded (from the working directory, falling
   back to the classpath).
-- **Any command-line arguments are given** → `config.properties` is **not** loaded automatically;
-  only the arguments apply, unless you explicitly pass `-f config.properties`.
+- **Any command-line arguments are present** → `config.properties` is not loaded automatically; only
+  the arguments apply, unless you explicitly pass `-f config.properties`.
 
-> ⚠️ The keys below are documented from the **actual code**, not from the historical comments in
-> `config.properties`. Several keys are now **inert** (parsed but ignored) after the migration from
-> log4j to Logback — they are marked accordingly.
-
-### Networking & test parameters (active)
+### Networking and test parameters
 
 | Key | Meaning |
 |---|---|
 | `server.ip` | Interface IP(s) to bind to. Comma-separated list, IPv4/IPv6. Omit ⇒ `0.0.0.0` (all interfaces). |
-| `server.port` | TCP control port clients connect to. (Code default if unset: `5234`; the shipped `config.properties` sets `5233`.) |
-| `server.ssl` | `true`/`false`. Wrap the control port in TLS using the bundled keystore `/crt/qosserver.jks` (see [TLS](#tls)). |
+| `server.port` | TCP control port clients connect to (default `5234`; the shipped `config.properties` sets `5233`). |
+| `server.ssl` | `true`/`false`. Wrap the control port in TLS using the keystore `/crt/qosserver.jks` (see [TLS](#tls)). |
 | `server.threads` | Size of the fixed worker thread pool ≈ max simultaneous clients. Minimum 5 (startup fails below that); a warning is printed at ≤ 10. |
 | `server.ip.check` | `true`/`false`. If true, only client IPs registered during test setup receive responses (a per-IP candidate map is enforced). |
 | `server.udp.minport` / `server.udp.maxport` | Inclusive UDP port range opened for UDP tests. |
 | `server.udp.ports` | Additional explicit blocking UDP ports (comma list), e.g. `53,123,500,...`. |
-| `server.udp.nio.ports` | Non-blocking (NIO) UDP ports (comma list). **Required for VoIP tests** (bidirectional streams). A port may not appear in both the blocking and NIO sets. |
-| `server.tcp.competence.sip` | TCP ports (comma list) that additionally speak the **SIP** test protocol, e.g. `5060`. |
-| `server.secret` | HMAC secret for client token verification. **Currently inert:** token-HMAC checking is compiled off (`ClientHandler.CHECK_TOKEN = false`), so the token is parsed but its signature is not verified. |
-| `server.verbose` | `0`/`1`/`2`. **Largely inert now:** it no longer controls general log output (Logback does). It still affects the interactive console and a few explicit `verbose >= 1` code paths. |
+| `server.udp.nio.ports` | Non-blocking (NIO) UDP ports (comma list). Required for VoIP tests (bidirectional streams). A port may not appear in both the blocking and NIO sets. |
+| `server.tcp.competence.sip` | TCP ports (comma list) that additionally speak the SIP test protocol, e.g. `5060`. |
+| `server.secret` | HMAC secret intended for client-token verification. Note: the server does not verify the token signature (`ClientHandler.CHECK_TOKEN` is `false`), so this key is not currently used. |
+| `server.verbose` | `0`/`1`/`2`. Does not control log output (Logback log levels do); it affects the interactive console and a few explicit `verbose >= 1` code paths. |
 
-### REST monitoring service (active)
+### REST monitoring service
 
 | Key | Meaning |
 |---|---|
 | `server.service.rest` | `true`/`false` — enable the REST monitoring interface. |
-| `server.service.rest.port` | TCP port for the REST interface (e.g. `10080`). Required if REST is enabled. |
+| `server.service.rest.port` | TCP port for the REST interface (e.g. `10080`). Required when REST is enabled. |
 | `server.service.rest.ip` | Bind IP for REST (default `127.0.0.1`). |
 | `server.service.rest.ssl` | `true`/`false` — serve REST over HTTPS (uses the same keystore as above). |
 
 See [REST monitoring interface](#rest-monitoring-interface).
 
-### Console (active, but terminal-only)
+### Console
 
 | Key | Meaning |
 |---|---|
-| `server.console` | `true`/`false` — enable the **interactive admin console** on stdin. See [Interactive server console](#interactive-server-console). Requires a real terminal (`System.console()`), so it is effectively a no-op under systemd/Docker/redirected input. |
+| `server.console` | `true`/`false` — enable the interactive admin console on stdin. Requires a real terminal (`System.console()`), so it is a no-op under systemd/Docker/redirected input. See [Interactive console](#interactive-console). |
 
-### Logging keys — **INERT** (superseded by Logback)
+### Ignored logging keys
 
-These were used by the old log4j-based `LoggingService` to build appenders programmatically. After the
-migration to SLF4J + Logback, `LoggingService.init()` is a no-op and these keys have **no effect**.
-Configure logging via `logback.xml` instead (see [Logging](#logging)).
+Logging is configured through `logback.xml` (see [Logging](#logging)), not through `config.properties`.
+The following keys are still parsed but have **no effect**; configure the equivalent behavior in
+`logback.xml` instead:
 
-| Inert key | Was |
-|---|---|
-| `server.logging` | enable/disable file logging |
-| `server.log`, `server.log.udp`, `server.log.tcp` | per-service log file paths |
-| `server.log.pattern` | log4j pattern for files |
-| `server.log.console` | log4j console appender on/off |
-| `server.syslog`, `server.syslog.host`, `server.syslog.pattern` | log4j syslog appender |
+`server.log.console`, `server.logging`, `server.log`, `server.log.udp`, `server.log.tcp`,
+`server.log.pattern`, `server.syslog`, `server.syslog.host`, `server.syslog.pattern`.
 
 ---
 
 ## Command-line options
 
 Parsed by `ServerPreferences` (case-insensitive). When any option is present, `config.properties` is
-not auto-loaded (use `-f` to load one).
+not loaded automatically (use `-f` to load one).
 
 | Option | Meaning |
 |---|---|
@@ -145,38 +129,37 @@ not auto-loaded (use `-f` to load one).
 | `-ip <ip>` | Bind interface IP (repeatable). |
 | `-ic` | Enable the client IP check (`server.ip.check`). |
 | `-s` | Enable TLS on the control port. |
-| `-k <secret>` | HMAC secret key (subject to the inert `CHECK_TOKEN` note above). |
+| `-k <secret>` | HMAC secret key (see the `server.secret` note above). |
 | `-v` / `-vv` | Verbose level 1 / 2. |
-| `-l <file>` | Set the main log file. **Inert** (Logback-controlled now). |
+| `-l <file>` | Set the main log file. No effect (logging is controlled by `logback.xml`). |
 | `-h` | Print help and exit. |
 
 ---
 
 ## Logging
 
-Logging was migrated from **log4j2** to **SLF4J + Logback**, matching the RMBTControlServer. log4j is
-no longer a dependency.
+Logging uses **SLF4J + Logback**, configured in
+[`src/main/resources/logback.xml`](src/main/resources/logback.xml) (bundled into the jar). To use an
+external configuration at runtime:
 
-- Configuration lives in [`src/main/resources/logback.xml`](src/main/resources/logback.xml) (bundled
-  into the jar). To override at runtime, point Logback at an external file:
-  ```bash
-  java -Dlogback.configurationFile=/etc/qos/logback.xml -jar target/RMBTQoSServer.jar
-  ```
-- **Default behavior:** everything logs to the **console** at `INFO`.
-- **Logstash shipping (optional):** if the environment variable `LOG_HOST` is set, a
-  `LogstashTcpSocketAppender` is added that sends JSON logs to `LOG_HOST:LOG_PORT` (default port
-  `4560`) tagged with `"app_name":"qos-service"`. If `LOG_HOST` is unset, the server stays
-  console-only (it cannot fail to start over logging).
+```bash
+java -Dlogback.configurationFile=/etc/qos/logback.xml -jar target/RMBTQoSServer.jar
+```
+
+- By default everything logs to the **console** at `INFO`.
+- If the environment variable `LOG_HOST` is set, a `LogstashTcpSocketAppender` also sends JSON logs to
+  `LOG_HOST:LOG_PORT` (default port `4560`), tagged with `"app_name":"qos-service"`. If `LOG_HOST` is
+  unset, the server stays console-only.
   ```bash
   LOG_HOST=logs.example.com LOG_PORT=4560 java -jar target/RMBTQoSServer.jar
   ```
-- **Per-service loggers:** the server logs under four named loggers — `QOS.SERVER`, `QOS.TCP`,
-  `QOS.UDP`, `QOS.DEBUG`. You can set levels individually in `logback.xml`, e.g.:
+- The server logs under four named loggers — `QOS.SERVER`, `QOS.TCP`, `QOS.UDP`, `QOS.DEBUG` — whose
+  levels can be set individually:
   ```xml
   <logger name="QOS.UDP" level="DEBUG"/>
   <logger name="QOS.TCP" level="WARN"/>
   ```
-- **Adding a file appender** (replacing the old `server.log*` keys) is done the standard Logback way:
+- A rolling file appender is added the standard Logback way:
   ```xml
   <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
       <file>/var/log/qos/qos.log</file>
@@ -191,15 +174,12 @@ no longer a dependency.
   </root>
   ```
 
-> Note: the application's own `verbose` level no longer gates log volume — use Logback log levels.
-
 ---
 
-## Interactive server console
+## Interactive console
 
-When `server.console=true` **and** the process has a real controlling terminal, an admin console runs
-on stdin (`TestServerConsole.start()`). It is purely operational (it does not affect logging) and
-supports:
+When `server.console=true` and the process has a real controlling terminal, an admin console runs on
+stdin. It is purely operational and supports:
 
 | Command | Action |
 |---|---|
@@ -213,10 +193,8 @@ supports:
 | `help` | Command help. |
 | `exit` | Leave the console prompt. |
 
-Under systemd/Docker/redirected stdin `System.console()` is `null`, so the console is silently
-disabled — operate the server via signals (Ctrl-C/SIGINT triggers a clean shutdown) and the REST
-interface instead. The old **`server.log.console`** key (a log4j console appender) is **obsolete** —
-console output is now produced by Logback's `CONSOLE` appender.
+Under systemd/Docker/redirected stdin, `System.console()` is `null` and the console is disabled;
+operate the server via signals (Ctrl-C / SIGINT triggers a clean shutdown) and the REST interface.
 
 ---
 
@@ -227,7 +205,7 @@ read-only JSON API (Restlet) for health/monitoring:
 
 | Method & path | Returns |
 |---|---|
-| `GET /` | Server status: `{ "starttime": <epoch_ms>, "version": "<major.minor.patch>" }`. If the server has recorded internal errors, an `errors` array is added **and the HTTP status is 500** — useful as a health probe. |
+| `GET /` | Server status: `{ "starttime": <epoch_ms>, "version": "<major.minor.patch>" }`. If the server has recorded internal errors, an `errors` array is added and the HTTP status is `500` — useful as a health probe. |
 | `GET /info/udp` | UDP servers grouped by port: `{ "protocol_type":"udp", "servers":[ { "port":N, "server_list":[ { "address":..., "running":bool, "clients":[ { "client":..., "rcv":N, "dup":N } ] } ] } ] }`. |
 | `GET /info/tcp` | TCP servers grouped by port: `{ "protocol_type":"tcp", "servers":[ { "port":N, "server_list":[ { "address":..., "ttl":<epoch_ms> } ] } ] }`. |
 | `GET /info` or any other type | `{ "protocol_type":"unknown", "errors":["unknown protocol","allowed protocols: 'udp', 'tcp'"] }`. |
@@ -254,24 +232,30 @@ status=up
 ```
 
 - On **startup** the service reads the previous `status`. If it was not `down` (i.e. the last run did
-  not shut down cleanly / crashed), it logs *"Test server shutdown not executed correctly!"*. It then
-  sets `status=up` and `last_startup=<now>`.
+  not shut down cleanly), it logs *"Test server shutdown not executed correctly!"*, then sets
+  `status=up` and `last_startup=<now>`.
 - On **shutdown** it sets `status=down` and `last_shutdown=<now>` and logs the uptime.
 - If the file is missing on startup it is created.
 
-Keys: `status` (`up`/`down`), `last_startup`, `last_shutdown`. **Do not edit it manually** — it is
-machine-generated. External monitoring can read `status` to alert on crashes.
+Keys: `status` (`up`/`down`), `last_startup`, `last_shutdown`. The file is machine-generated on every
+start/stop and is **not** kept in version control (it is in `.gitignore`). External monitoring can
+read `status` to alert on crashes.
 
 ---
 
 ## TLS
 
-When `server.ssl=true` (or `server.service.rest.ssl=true`) the server loads the JKS keystore from the
-classpath at **`/crt/qosserver.jks`** (type `JKS`). This keystore is **not** included in the
-repository; provide your own at build/packaging time.
+When `server.ssl=true` (or `server.service.rest.ssl=true`) the server loads a `JKS` keystore from the
+classpath at **`/crt/qosserver.jks`**. This keystore is not included in the repository; provide your
+own at build/packaging time.
 
-> The built-in TLS stack is dated. For production, terminating TLS with a wrapper such as **stunnel**
-> in front of the plain control port is recommended.
+The TLS context is created with `SSLContext.getInstance("TLS")` and no explicit protocol or cipher
+configuration, so the JDK negotiates the protocol version (TLS 1.2/1.3 on JDK 17–25) and default
+cipher suites. The keystore password is hard-coded in the source (`TestServer.QOS_KEY_PASSWORD`), the
+keystore must be embedded in the jar, the server uses a trust-all client `TrustManager` (clients are
+authenticated by the HMAC token, not by client certificates), and protocols/ciphers/cert rotation are
+not configurable without code changes. For production, terminating TLS with a wrapper such as
+**stunnel** (or a reverse proxy) in front of the plain control port is recommended.
 
 Generate a keystore with:
 
@@ -282,11 +266,12 @@ keytool -genkey -keyalg RSA -alias Qos -keystore qosserver.jks \
 
 ---
 
-## Repository layout notes
+## Repository layout
 
-- `src/main/java` — server sources (incl. the extracted `at.rtr.rmbt.util.*` and
-  `at.rtr.rmbt.shared.*` classes the server depends on).
-- `src/test/java` — active JUnit 5 + Mockito tests.
-- `legacy-tests/` — original JUnit 4 + JMockit tests, **kept for reference only and excluded from the
-  build** (see `legacy-tests/README.md`).
-- `PROTOCOL.md` — the full client/server wire protocol.
+- `src/main/java` — server sources, including the `at.rtr.rmbt.util.*` and `at.rtr.rmbt.shared.*`
+  helper classes the server depends on.
+- `src/main/resources/logback.xml` — logging configuration.
+- `src/test/java` — JUnit 5 + Mockito tests.
+- `legacy-tests/` — JUnit 4 + JMockit tests, excluded from the build (see `legacy-tests/README.md`).
+- `config.properties` — server configuration.
+- `PROTOCOL.md` — the client/server wire protocol.

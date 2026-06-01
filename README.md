@@ -1,7 +1,9 @@
 # RMBT QoS Server
 
-The QoS (Quality of Service) test server for **RMBT / Open-RMBT** (the engine behind RTR-Netztest and
-similar measurement systems). Main class: `at.rtr.rmbt.qos.testserver.TestServer`.
+The QoS (Quality of Service) test server for **Open-RMBT** (the engine behind RTR-Netztest). 
+**This code is outdated and not ready for production. Please use it as lab reference only.**
+
+Main class: `at.rtr.rmbt.qos.testserver.TestServer`.
 
 Open RMBT QoS is open source software, licensed under the **Apache License 2.0** — see
 [`LICENSE`](LICENSE).

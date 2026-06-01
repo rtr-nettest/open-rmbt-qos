@@ -166,7 +166,7 @@ The test results are sent by the client as a {@link org.json.JSONArray} and will
         "test_type": "udp"
     }, {
         "website_result_tx_bytes": 1653,
-        "website_objective_url": "http://alladin.at",
+        "website_objective_url": "http://example.com",
         "website_result_rx_bytes": 18535,
         "website_result_info": "OK",
         "website_result_duration": 1473035250,
@@ -186,7 +186,7 @@ The test results are sent by the client as a {@link org.json.JSONArray} and will
         "test_type": "website"
     }, {
         "website_result_tx_bytes": 1189,
-        "website_objective_url": "http://alladin.at/blabla",
+        "website_objective_url": "http://example.com/blabla",
         "website_result_rx_bytes": 2859,
         "website_result_info": "OK",
         "website_result_duration": 1003113078,

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2015 alladin-IT GmbH
+ * Copyright RTR-GmbH
  * Copyright 2015 Rundfunk und Telekom Regulierungs-GmbH (RTR-GmbH)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  ******************************************************************************/
-// based on: https://raw.githubusercontent.com/alladin-IT/open-rmbt/master/RMBTUtil/src/main/java/at/alladin/rmbt/util/net/udp/UdpStreamSender.java
 package at.rtr.rmbt.util.net.udp;
 
 import java.io.ByteArrayOutputStream;

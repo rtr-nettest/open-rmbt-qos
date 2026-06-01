@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2019 alladin-IT GmbH
+ * Copyright RTR-GmbH
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,14 +32,14 @@ import mockit.Mock;
 
 /**
  * 
- * @author Lukasz Budryk (lb@alladin.at)
+ * @author Lukasz Budryk (RTR-GmbH)
  *
  */
 public class TestServerImplStartupAndShutdownIntegrationTest {
 	
 	/**
 	 * 
-	 * @author Lukasz Budryk (lb@alladin.at)
+	 * @author Lukasz Budryk (RTR-GmbH)
 	 *
 	 */
 	public class ServerSocketAcceptCounterMockup extends ServerSocketMockup {

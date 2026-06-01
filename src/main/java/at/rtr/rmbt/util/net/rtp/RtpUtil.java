@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2015-2019 alladin-IT GmbH
+ * Copyright RTR-GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  ******************************************************************************/
-// based on: https://raw.githubusercontent.com/alladin-IT/open-rmbt/master/RMBTUtil/src/main/java/at/alladin/rmbt/util/net/rtp/RtpUtil.java
 package at.rtr.rmbt.util.net.rtp;
 
 import java.io.Closeable;

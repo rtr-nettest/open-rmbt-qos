@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2013-2014 alladin-IT GmbH
+ * Copyright RTR-GmbH
  * Copyright 2013-2014 Rundfunk und Telekom Regulierungs-GmbH (RTR-GmbH)
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,7 +57,7 @@ public class TcpWatcherRunnable extends IntervalJob<String> {
 	protected long removeCounter = 0;
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.service.AbstractJob#execute()
+	 * @see at.rtr.rmbt.qos.testserver.service.AbstractJob#execute()
 	 */
 	@Override
 	public String execute() throws Exception {
@@ -105,7 +105,7 @@ public class TcpWatcherRunnable extends IntervalJob<String> {
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.service.IntervalJob#restartOnError()
+	 * @see at.rtr.rmbt.qos.testserver.service.IntervalJob#restartOnError()
 	 */
 	@Override
 	public boolean restartOnError() {
@@ -114,7 +114,7 @@ public class TcpWatcherRunnable extends IntervalJob<String> {
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.service.AbstractJob#getNewInstance()
+	 * @see at.rtr.rmbt.qos.testserver.service.AbstractJob#getNewInstance()
 	 */
 	@Override
 	public TcpWatcherRunnable getNewInstance() {
@@ -123,7 +123,7 @@ public class TcpWatcherRunnable extends IntervalJob<String> {
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.service.AbstractJob#getId()
+	 * @see at.rtr.rmbt.qos.testserver.service.AbstractJob#getId()
 	 */
 	@Override
 	public String getId() {

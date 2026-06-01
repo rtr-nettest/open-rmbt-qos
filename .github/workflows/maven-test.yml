@@ -1,0 +1,25 @@
+# Builds and tests the QoS server with Maven.
+# Mirrors the RMBTControlServer "Server test" workflow.
+name: Server test
+
+on:
+  push:
+    branches: [ master, main, feature/*, dev ]
+  pull_request:
+    branches: [ master, main, dev ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'corretto'
+          cache: maven
+      - name: Test application
+        run: mvn -B compile test

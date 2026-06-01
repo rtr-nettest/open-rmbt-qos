@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2013-2014 alladin-IT GmbH
+ * Copyright RTR-GmbH
  * Copyright 2013-2014 Rundfunk und Telekom Regulierungs-GmbH (RTR-GmbH)
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -91,7 +91,7 @@ public class RuntimeGuardService extends EventJob<String> {
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.service.AbstractJob#execute()
+	 * @see at.rtr.rmbt.qos.testserver.service.AbstractJob#execute()
 	 */
 	@Override
 	public String execute() throws Exception {
@@ -146,7 +146,7 @@ public class RuntimeGuardService extends EventJob<String> {
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.service.AbstractJob#getNewInstance()
+	 * @see at.rtr.rmbt.qos.testserver.service.AbstractJob#getNewInstance()
 	 */
 	@Override
 	public RuntimeGuardService getNewInstance() {
@@ -155,7 +155,7 @@ public class RuntimeGuardService extends EventJob<String> {
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.service.AbstractJob#getId()
+	 * @see at.rtr.rmbt.qos.testserver.service.AbstractJob#getId()
 	 */
 	@Override
 	public String getId() {

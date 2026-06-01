@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2013-2019 alladin-IT GmbH
+ * Copyright RTR-GmbH
  * Copyright 2013-2016 Rundfunk und Telekom Regulierungs-GmbH (RTR-GmbH)
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -257,7 +257,7 @@ public class UdpMultiClientServer extends AbstractUdpServer<DatagramSocket> impl
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.udp.AbstractCandidateHandler#getSocket()
+	 * @see at.rtr.rmbt.qos.testserver.udp.AbstractCandidateHandler#getSocket()
 	 */
 	@Override
 	public DatagramSocket getSocket() {
@@ -266,7 +266,7 @@ public class UdpMultiClientServer extends AbstractUdpServer<DatagramSocket> impl
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.udp.AbstractUdpServer#send(java.net.DatagramPacket)
+	 * @see at.rtr.rmbt.qos.testserver.udp.AbstractUdpServer#send(java.net.DatagramPacket)
 	 */
 	@Override
 	public void send(DatagramPacket dp) throws IOException {
@@ -275,7 +275,7 @@ public class UdpMultiClientServer extends AbstractUdpServer<DatagramSocket> impl
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.udp.AbstractUdpServer#isHealthy()
+	 * @see at.rtr.rmbt.qos.testserver.udp.AbstractUdpServer#isHealthy()
 	 */
 	@Override
 	public boolean isHealthy() {
@@ -284,7 +284,7 @@ public class UdpMultiClientServer extends AbstractUdpServer<DatagramSocket> impl
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.entity.Observable#getStatusMessage()
+	 * @see at.rtr.rmbt.qos.testserver.entity.Observable#getStatusMessage()
 	 */
 	@Override
 	public String getStatusMessage() {

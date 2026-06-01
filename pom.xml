@@ -17,15 +17,21 @@
         <maven.compiler.release>17</maven.compiler.release>
         <main.class>at.rtr.rmbt.qos.testserver.TestServer</main.class>
 
+        <!-- restlet kept at 2.4.3: 3.0-M1 is a pre-release milestone -->
         <restlet.version>2.4.3</restlet.version>
-        <log4j.version>2.24.3</log4j.version>
-        <json.version>20240303</json.version>
-        <gson.version>2.11.0</gson.version>
-        <guava.version>33.4.0-jre</guava.version>
-        <postgresql.version>42.7.4</postgresql.version>
-        <dnsjava.version>3.6.2</dnsjava.version>
-        <junit.version>5.11.3</junit.version>
-        <mockito.version>5.14.2</mockito.version>
+        <!-- slf4j kept at 2.0.16: 2.1.0-alpha1 is a pre-release -->
+        <slf4j.version>2.0.16</slf4j.version>
+        <logback.version>1.5.33</logback.version>
+        <logstash.encoder.version>9.0</logstash.encoder.version>
+        <janino.version>3.1.12</janino.version>
+        <json.version>20260522</json.version>
+        <gson.version>2.14.0</gson.version>
+        <guava.version>33.6.0-jre</guava.version>
+        <postgresql.version>42.7.11</postgresql.version>
+        <dnsjava.version>3.6.5</dnsjava.version>
+        <!-- junit kept on 5.x: 6.x is a major bump with Mockito-JUnit5 compatibility risk -->
+        <junit.version>5.11.4</junit.version>
+        <mockito.version>5.23.0</mockito.version>
     </properties>
 
     <repositories>
@@ -44,16 +50,27 @@
             <version>${restlet.version}</version>
         </dependency>
 
-        <!-- Logging (log4j2) -->
+        <!-- Logging: SLF4J + Logback (+ Logstash encoder), mirroring the ControlServer -->
         <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-api</artifactId>
-            <version>${log4j.version}</version>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-core</artifactId>
-            <version>${log4j.version}</version>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>${logstash.encoder.version}</version>
+        </dependency>
+        <!-- Required for <if>/<then> conditionals in logback.xml -->
+        <dependency>
+            <groupId>org.codehaus.janino</groupId>
+            <artifactId>janino</artifactId>
+            <version>${janino.version}</version>
         </dependency>
 
         <!-- JSON -->
@@ -116,20 +133,40 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
+                <version>3.15.0</version>
+            </plugin>
+
+            <!-- Exposes ${org.mockito:mockito-core:jar} (the resolved jar path) for the surefire agent -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.11.0</version>
+                <executions>
+                    <execution>
+                        <id>resolve-agent-paths</id>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.5.2</version>
+                <version>3.5.6</version>
+                <configuration>
+                    <!-- Load Mockito as a Java agent (inline mock maker) instead of self-attaching,
+                         which is required on current/future JDKs (17 through 25). -->
+                    <argLine>-javaagent:${org.mockito:mockito-core:jar} -Xshare:off</argLine>
+                </configuration>
             </plugin>
 
             <!-- Runnable fat jar -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.6.0</version>
+                <version>3.6.2</version>
                 <executions>
                     <execution>
                         <phase>package</phase>

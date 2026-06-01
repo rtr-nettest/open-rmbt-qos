@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2019 alladin-IT GmbH
+ * Copyright RTR-GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ import at.rtr.rmbt.qos.testserver.ServerPreferences.UdpPort;
 
 /**
  *
- * @author Lukasz Budryk (lb@alladin.at)
+ * @author Lukasz Budryk (RTR-GmbH)
  *
  */
 public class ServerPreferencesTest {

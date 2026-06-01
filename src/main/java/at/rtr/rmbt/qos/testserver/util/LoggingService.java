@@ -1,6 +1,6 @@
 /*******************************************************************************
  * Copyright 2016 Specure GmbH
- * Copyright 2019 alladin-IT GmbH
+ * Copyright RTR-GmbH
  * Copyright 2016 Rundfunk und Telekom Regulierungs-GmbH (RTR-GmbH)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,167 +17,108 @@
  *******************************************************************************/
 package at.rtr.rmbt.qos.testserver.util;
 
-import java.io.IOException;
-import java.util.HashMap;
+import java.util.EnumMap;
 import java.util.Map;
-import java.util.Map.Entry;
-
-
 
 import at.rtr.rmbt.qos.testserver.ServerPreferences.TestServerServiceEnum;
 import at.rtr.rmbt.qos.testserver.TestServerImpl;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.core.Logger;
-import org.apache.logging.log4j.core.appender.ConsoleAppender;
-import org.apache.logging.log4j.core.appender.RollingFileAppender;
-import org.apache.logging.log4j.core.appender.SyslogAppender;
-import org.apache.logging.log4j.core.appender.rolling.TimeBasedTriggeringPolicy;
-import org.apache.logging.log4j.core.layout.PatternLayout;
-import org.apache.logging.log4j.core.net.Facility;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Logging  service for the test server
- * @author lb
+ * Logging service for the test server.
  *
+ * <p>Backed by SLF4J / Logback (see {@code logback.xml}), mirroring the logging setup of the
+ * RMBTControlServer (console plus optional Logstash via the {@code LOG_HOST} environment variable).
+ * The previous programmatic log4j2 appender configuration (console/file/syslog driven by CLI flags)
+ * has been replaced by the declarative {@code logback.xml}; appender wiring now lives there.</p>
+ *
+ * @author lb
  */
 public class LoggingService {
 
 	/**
-	 * all available loggers
+	 * Per-service loggers. Logger names are kept stable ("QOS.*") so they can be targeted
+	 * individually from logback.xml if desired.
 	 */
-	public final static Map<TestServerServiceEnum, Logger> LOGGER_MAP = new HashMap<>();
-	
-	/**
-	 * tells if any logging [syslog, file, console] has been enabled
-	 */
-	public static boolean IS_LOGGING_AVAILABLE = false;
+	public final static Map<TestServerServiceEnum, Logger> LOGGER_MAP = new EnumMap<>(TestServerServiceEnum.class);
+
+	static {
+		LOGGER_MAP.put(TestServerServiceEnum.RUNTIME_GUARD_SERVICE, LoggerFactory.getLogger("QOS.DEBUG"));
+		LOGGER_MAP.put(TestServerServiceEnum.TCP_SERVICE, LoggerFactory.getLogger("QOS.TCP"));
+		LOGGER_MAP.put(TestServerServiceEnum.UDP_SERVICE, LoggerFactory.getLogger("QOS.UDP"));
+		LOGGER_MAP.put(TestServerServiceEnum.TEST_SERVER, LoggerFactory.getLogger("QOS.SERVER"));
+	}
 
 	/**
-	 * 
-	 * @param testServerImpl
-	 * @return
+	 * With SLF4J/Logback logging is always available (at minimum the console appender). Retained
+	 * for backwards compatibility with existing call sites.
+	 */
+	public static boolean IS_LOGGING_AVAILABLE = true;
+
+	private static Logger logger(final TestServerServiceEnum service) {
+		final Logger l = service != null ? LOGGER_MAP.get(service) : null;
+		return l != null ? l : LOGGER_MAP.get(TestServerServiceEnum.TEST_SERVER);
+	}
+
+	/**
+	 * Kept for source compatibility. Logback is configured declaratively via {@code logback.xml},
+	 * so there is nothing to wire up programmatically here.
 	 */
 	public static boolean isLoggingAvailable(final TestServerImpl testServerImpl) {
-		return (testServerImpl.serverPreferences != null 
-				&& (testServerImpl.serverPreferences.isConsoleLog() || testServerImpl.serverPreferences.isLoggingEnabled() || testServerImpl.serverPreferences.isSyslogEnabled()));
+		return IS_LOGGING_AVAILABLE;
 	}
-	
+
 	/**
-	 * 
-	 * @param testServerImpl
+	 * No-op: appenders are configured via {@code logback.xml}. Retained so existing callers
+	 * ({@code TestServerImpl}) continue to compile and run unchanged.
 	 */
-	public static synchronized void init(final TestServerImpl testServerImpl) {
-		IS_LOGGING_AVAILABLE = isLoggingAvailable(testServerImpl);
-		((Logger) LogManager.getRootLogger()).getAppenders().clear();
-		
-		if (testServerImpl.serverPreferences != null 
-				&& testServerImpl.serverPreferences.isSyslogEnabled()) {
-			SyslogAppender syslogAppender = SyslogAppender.newSyslogAppenderBuilder()
-					.setName("qosSyslog")
-					.setLayout(PatternLayout.newBuilder().withPattern(testServerImpl.serverPreferences.getSyslogPattern()).build())
-					.withHost(testServerImpl.serverPreferences.getSyslogHost())
-					.setFacility(Facility.LOCAL0).build();
-			Logger rootLogger = (Logger) LogManager.getRootLogger();
-			rootLogger.addAppender(syslogAppender);
-
-		}
-	
-		LOGGER_MAP.clear();
-		LOGGER_MAP.put(TestServerServiceEnum.RUNTIME_GUARD_SERVICE, (Logger) LogManager.getLogger("QOS.DEBUG"));
-		LOGGER_MAP.put(TestServerServiceEnum.TCP_SERVICE, (Logger) LogManager.getLogger("QOS.TCP"));
-		LOGGER_MAP.put(TestServerServiceEnum.UDP_SERVICE, (Logger) LogManager.getLogger("QOS.UDP"));
-		LOGGER_MAP.put(TestServerServiceEnum.TEST_SERVER, (Logger) LogManager.getLogger("QOS.SERVER"));
-		
-		//file logging appender:
-		if (testServerImpl.serverPreferences != null 
-				&& testServerImpl.serverPreferences.isLoggingEnabled()) {
-			for (final Entry<TestServerServiceEnum, String> e : testServerImpl.serverPreferences.getLogFileMap().entrySet()) {
-				final Logger l = LOGGER_MAP.get(e.getKey());
-
-				RollingFileAppender appender = RollingFileAppender.newBuilder()
-						.setName("qos_" + e.getKey())
-						.withFileName(e.getValue())
-						.withPolicy(TimeBasedTriggeringPolicy.newBuilder().withInterval(1).build())
-						.withFilePattern("_%d{yyyy-MM-dd-a}")
-						.setLayout(PatternLayout.newBuilder().withPattern(testServerImpl.serverPreferences.getLoggingPattern()).build())
-						.build();
-				l.addAppender(appender);
-
-			}
-		}
-		
-		//console appender:
-		if (testServerImpl.serverPreferences != null 
-				&& testServerImpl.serverPreferences.isConsoleLog()) {
-			ConsoleAppender consoleAppender = ConsoleAppender.newBuilder().setName("rootConsole").setLayout(PatternLayout.newBuilder().withPattern("%d{ISO8601} - %m%n").build()).build();
-			((Logger) LogManager.getRootLogger()).addAppender(consoleAppender);
-		}
+	public static void init(final TestServerImpl testServerImpl) {
+		// Logback is initialised from logback.xml on first logger use; nothing to do here.
 	}
-	
+
 	/**
-	 * fatal level logging
-	 * @param t
-	 * @param message
-	 * @param service
+	 * fatal level logging (mapped to SLF4J error, which has no FATAL level)
 	 */
 	public static void fatal(Throwable t, String message, TestServerServiceEnum service) {
-		if (IS_LOGGING_AVAILABLE) {
-			if (t != null) {
-				LOGGER_MAP.get(service).fatal("[" + t.getClass().getCanonicalName() + ": " + t.getLocalizedMessage() + "] " + message, t);
-			}
-			else {
-				LOGGER_MAP.get(service).fatal("[unknown Exception] " + message);
-			}
+		final Logger l = logger(service);
+		if (t != null) {
+			l.error("[" + t.getClass().getCanonicalName() + ": " + t.getLocalizedMessage() + "] " + message, t);
+		} else {
+			l.error("[unknown Exception] " + message);
 		}
 	}
 
 	/**
 	 * error level logging
-	 * @param t
-	 * @param message
-	 * @param service
 	 */
 	public static void error(Throwable t, String message, TestServerServiceEnum service) {
-		if (IS_LOGGING_AVAILABLE) {
-			if (t != null) {
-				LOGGER_MAP.get(service).error("[" + t.getClass().getCanonicalName() + ": " + t.getLocalizedMessage() + "] " + message, t);
-			}
-			else {
-				LOGGER_MAP.get(service).error("[unknown Exception] " + message);
-			}
+		final Logger l = logger(service);
+		if (t != null) {
+			l.error("[" + t.getClass().getCanonicalName() + ": " + t.getLocalizedMessage() + "] " + message, t);
+		} else {
+			l.error("[unknown Exception] " + message);
 		}
 	}
-	
+
 	/**
 	 * warn level logging
-	 * @param message
-	 * @param service
 	 */
 	public static void warn(String message, TestServerServiceEnum service) {
-		if (IS_LOGGING_AVAILABLE) {
-			LOGGER_MAP.get(service).warn(message);
-		}		
+		logger(service).warn(message);
 	}
-		
+
 	/**
 	 * info level logging
-	 * @param message
-	 * @param service
 	 */
 	public static void info(String message, TestServerServiceEnum service) {
-		if (IS_LOGGING_AVAILABLE) {
-			LOGGER_MAP.get(service).info(message);
-		}
+		logger(service).info(message);
 	}
-	
+
 	/**
 	 * debug level logging
-	 * @param message
-	 * @param service
 	 */
 	public static void debug(String message, TestServerServiceEnum service) {
-		if (IS_LOGGING_AVAILABLE) {
-			LOGGER_MAP.get(service).debug(message);
-		}		
+		logger(service).debug(message);
 	}
 }

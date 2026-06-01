@@ -86,7 +86,7 @@ public class TcpMultiClientServer extends AbstractTcpServer {
 	/*
 	 * prepares this server for listening (=starts thread), or increases the current connection count by 1
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.servers.AbstractServer#prepare()
+	 * @see at.rtr.rmbt.qos.testserver.servers.AbstractServer#prepare()
 	 */
 	@Override
 	@SuppressWarnings("unused")
@@ -124,7 +124,7 @@ public class TcpMultiClientServer extends AbstractTcpServer {
 	
 	/*decreases the number of active connections and closes the socket if necessary
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.servers.AbstractServer#close()
+	 * @see at.rtr.rmbt.qos.testserver.servers.AbstractServer#close()
 	 */
 	@Override
 	public synchronized boolean close() throws IOException {
@@ -153,7 +153,7 @@ public class TcpMultiClientServer extends AbstractTcpServer {
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.servers.AbstractServer#isAlive()
+	 * @see at.rtr.rmbt.qos.testserver.servers.AbstractServer#isAlive()
 	 */
 	@Override
 	public synchronized boolean isAlive() {
@@ -174,7 +174,7 @@ public class TcpMultiClientServer extends AbstractTcpServer {
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.servers.AbstractServer#execute()
+	 * @see at.rtr.rmbt.qos.testserver.servers.AbstractServer#execute()
 	 */
 	@Override
 	protected void execute() throws Exception {
@@ -197,7 +197,7 @@ public class TcpMultiClientServer extends AbstractTcpServer {
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.entity.Observable#isHealthy()
+	 * @see at.rtr.rmbt.qos.testserver.entity.Observable#isHealthy()
 	 */
 	@Override
 	public boolean isHealthy() {
@@ -206,7 +206,7 @@ public class TcpMultiClientServer extends AbstractTcpServer {
 
 	/*
 	 * (non-Javadoc)
-	 * @see at.alladin.rmbt.qos.testserver.entity.Observable#getStatusMessage()
+	 * @see at.rtr.rmbt.qos.testserver.entity.Observable#getStatusMessage()
 	 */
 	@Override
 	public String getStatusMessage() {

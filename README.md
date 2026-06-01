@@ -91,7 +91,7 @@ Settings are read by `ServerPreferences`. Precedence:
 | `server.ssl` | `true`/`false`. Wrap the control port in TLS using the bundled keystore `/crt/qosserver.jks` (see [TLS](#tls)). |
 | `server.threads` | Size of the fixed worker thread pool ≈ max simultaneous clients. Minimum 5 (startup fails below that); a warning is printed at ≤ 10. |
 | `server.ip.check` | `true`/`false`. If true, only client IPs registered during test setup receive responses (a per-IP candidate map is enforced). |
-| `server.udp.minport` / `server.udp.maxport` | Inclusive UDP port range opened for UDP tests. (Note: the `-h` help text wrongly calls the upper bound "exclusive".) |
+| `server.udp.minport` / `server.udp.maxport` | Inclusive UDP port range opened for UDP tests. |
 | `server.udp.ports` | Additional explicit blocking UDP ports (comma list), e.g. `53,123,500,...`. |
 | `server.udp.nio.ports` | Non-blocking (NIO) UDP ports (comma list). **Required for VoIP tests** (bidirectional streams). A port may not appear in both the blocking and NIO sets. |
 | `server.tcp.competence.sip` | TCP ports (comma list) that additionally speak the **SIP** test protocol, e.g. `5060`. |
@@ -149,9 +149,6 @@ not auto-loaded (use `-f` to load one).
 | `-v` / `-vv` | Verbose level 1 / 2. |
 | `-l <file>` | Set the main log file. **Inert** (Logback-controlled now). |
 | `-h` | Print help and exit. |
-
-> The built-in `-h` help text is partly outdated (e.g. it states a default port of `5233` and an
-> "exclusive" UDP upper bound). The tables here reflect the actual code.
 
 ---
 

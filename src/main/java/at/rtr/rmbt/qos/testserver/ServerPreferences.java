@@ -631,13 +631,13 @@ public class ServerPreferences {
 		System.out.println("-ic => register all TCP test candidates and make an ip check before responding.");
 		System.out.println("-v => verbose level 1, more debug output.");
 		System.out.println("-vv => verbose level 2, even more debug output.");
-		System.out.println("-f [file_name] => initilizes the server by using a config file (default: config.properties).");
-		System.out.println("-p [port_number] => initilizes the server on this port number (default: 5233).");
-		System.out.println("-u [min_port_number] [max_port_number] => supported udp port range by this server: from min_port_number (inclusive) to max_port_number (exclusive).");
-		System.out.println("-t [max_threads] => The max number of threads (clients) this server can hanle at the same time (default: 100).");
+		System.out.println("-f [file_name] => initializes the server by using a config file (default: config.properties).");
+		System.out.println("-p [port_number] => initializes the server on this port number (default: 5234).");
+		System.out.println("-u [min_port_number] [max_port_number] => supported udp port range by this server: from min_port_number to max_port_number (both inclusive).");
+		System.out.println("-t [max_threads] => The max number of threads (clients) this server can handle at the same time (default: 100).");
 		System.out.println("-k [secret_key] => The secret key used for client-server communication.");
-		System.out.println("\nExample: -p 5233 -u 10000 20000 => makes the server listen on port 5233 for incoming test requests and let it accept udp test connections on ports 10000 to 20000.");
-		System.out.println("\nIf no parameter is set then the default config file config.properties is beeing used. If this file isn't found, the default values are beeing used.");
+		System.out.println("\nExample: -p 5234 -u 10000 20000 => makes the server listen on port 5234 for incoming test requests and let it accept udp test connections on ports 10000 to 20000 (inclusive).");
+		System.out.println("\nIf no parameter is set then the default config file config.properties is being used. If this file isn't found, the default values are being used.");
 		System.out.println("---------------------------------------------");
 	}
 

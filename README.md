@@ -61,6 +61,20 @@ java -jar target/RMBTQoSServer.jar
 java -jar target/RMBTQoSServer.jar -p 5234 -u 10000 10050 -t 200
 ```
 
+> **Client-token verification is enabled by default.** Supply the same HMAC secret the Control Server
+> signs tokens with (`-k <secret>` / `server.secret`), or every client is rejected. For an isolated
+> lab where no secret is configured, disable verification with `-Dqos.checkToken=false`:
+>
+> ```bash
+> # production: token verification on (default) — secret must match the Control Server
+> java -jar target/RMBTQoSServer.jar -k <shared-secret> -p 5233 -u 10100 10200
+>
+> # isolated lab only: no authentication
+> java -Dqos.checkToken=false -jar target/RMBTQoSServer.jar -p 5233 -u 10100 10200
+> ```
+>
+> See `open-rmbt-qos-private/security-enhancements.md` for the full security configuration.
+
 ### Java versions
 
 Requires **Java 17**. It compiles and runs on **JDK 17 through 25** (`maven.compiler.release = 17`).
@@ -89,7 +103,7 @@ Settings are read by `ServerPreferences`. Precedence:
 | `server.udp.ports` | Additional explicit blocking UDP ports (comma list), e.g. `53,123,500,...`. |
 | `server.udp.nio.ports` | Non-blocking (NIO) UDP ports (comma list). Required for VoIP tests (bidirectional streams). A port may not appear in both the blocking and NIO sets. |
 | `server.tcp.competence.sip` | TCP ports (comma list) that additionally speak the SIP test protocol, e.g. `5060`. |
-| `server.secret` | HMAC secret intended for client-token verification. Note: the server does not verify the token signature (`ClientHandler.CHECK_TOKEN` is `false`), so this key is not currently used. |
+| `server.secret` | HMAC secret for client-token verification. **Required by default**: verification is enabled (`ClientHandler.isTokenCheckEnabled()`, default `true`), so this must equal the Control Server's token-signing key or all clients are rejected. Disable for isolated lab use with `-Dqos.checkToken=false`. |
 | `server.verbose` | `0`/`1`/`2`. Does not control log output (Logback log levels do); it affects the interactive console and a few explicit `verbose >= 1` code paths. |
 
 ### REST monitoring service
@@ -134,7 +148,7 @@ not loaded automatically (use `-f` to load one).
 | `-ip <ip>` | Bind interface IP (repeatable). |
 | `-ic` | Enable the client IP check (`server.ip.check`). |
 | `-s` | Enable TLS on the control port. |
-| `-k <secret>` | HMAC secret key (see the `server.secret` note above). |
+| `-k <secret>` | HMAC secret key — required by default for token verification (see the `server.secret` note above). |
 | `-v` / `-vv` | Verbose level 1 / 2. |
 | `-l <file>` | Set the main log file. No effect (logging is controlled by `logback.xml`). |
 | `-h` | Print help and exit. |

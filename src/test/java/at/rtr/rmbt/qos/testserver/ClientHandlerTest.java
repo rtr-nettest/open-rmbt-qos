@@ -130,8 +130,12 @@ public class ClientHandlerTest {
 	}
 
 	@Test
-	public void testCheckTokenWithValidToken() throws Exception {
+	public void testCheckTokenParsesWhenVerificationDisabled() throws Exception {
+		// This test covers token PARSING, not authentication, so it explicitly disables the
+		// (secure-by-default) HMAC verification introduced for security review C1.
 		final CapturingSocket socket = new CapturingSocket(null);
+		final String previous = System.getProperty("qos.checkToken");
+		System.setProperty("qos.checkToken", "false");
 		try (ServerSocket serverSocket = new ServerSocket();
 		     MockedStatic<TestServerConsole> console = mockStatic(TestServerConsole.class)) {
 
@@ -145,6 +149,35 @@ public class ClientHandlerTest {
 					"token UUID != 'bbd1ee96-0779-4619-b993-bb4bf7089754'");
 			assertEquals("3gr2gw9lVhtVONV0XO62Vamu/uw=", token.getHmac(),
 					"token Hmac != '3gr2gw9lVhtVONV0XO62Vamu/uw='");
+		}
+		finally {
+			restoreProperty("qos.checkToken", previous);
+		}
+	}
+
+	@Test
+	public void testCheckTokenRejectsUnverifiedTokenWhenVerificationEnabled() throws Exception {
+		// Secure default (C1): an unsigned/stale token must be rejected when verification is on.
+		final CapturingSocket socket = new CapturingSocket(null);
+		final String previous = System.getProperty("qos.checkToken");
+		System.setProperty("qos.checkToken", "true");
+		try (ServerSocket serverSocket = new ServerSocket();
+		     MockedStatic<TestServerConsole> console = mockStatic(TestServerConsole.class)) {
+
+			final ClientHandler ch = new ClientHandler(serverSocket, socket);
+			assertThrows(IOException.class, () ->
+					ch.checkToken("TOKEN bbd1ee96-0779-4619-b993-bb4bf7089754_1528136454_3gr2gw9lVhtVONV0XO62Vamu/uw=\n"));
+		}
+		finally {
+			restoreProperty("qos.checkToken", previous);
+		}
+	}
+
+	private static void restoreProperty(final String key, final String value) {
+		if (value == null) {
+			System.clearProperty(key);
+		} else {
+			System.setProperty(key, value);
 		}
 	}
 }

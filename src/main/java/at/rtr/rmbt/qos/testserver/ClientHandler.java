@@ -32,10 +32,12 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.util.Arrays;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -72,9 +74,32 @@ public class ClientHandler implements Runnable {
 	public final static Pattern TOKEN_REGEX_PATTERN = Pattern.compile("TOKEN ([\\d\\w-]*)_([\\d]*)_(.*)");
 	
 	/**
-	 * enable/disable token check
+	 * Whether identity-token (HMAC) verification is enabled. Secure by default; disable only for
+	 * isolated lab testing with {@code -Dqos.checkToken=false}. Read dynamically so it can be toggled
+	 * at runtime (e.g. by tests). (Security review C1.)
 	 */
-	public final static boolean CHECK_TOKEN = false;
+	public static boolean isTokenCheckEnabled() {
+		return !"false".equalsIgnoreCase(System.getProperty("qos.checkToken", "true"));
+	}
+
+	// --- Upper bounds for untrusted, client-supplied magnitudes (security review H1/H2/H3/M1/M3) ---
+	/** Max UDP packets the client may make the server send (H2). */
+	public final static int MAX_UDP_PACKETS = 1000;
+	/** Max VoIP/RTP reflection stream duration in ms (H3). */
+	public final static int MAX_CALL_DURATION_MS = 30000;
+	/** Max inter-packet delay in ms the client may request (H2). */
+	public final static int MAX_PACKET_DELAY_MS = 1000;
+	/** Lowest port a client may ask the server to bind/dial — keeps off privileged ports (H1/M3). */
+	public final static int MIN_TEST_PORT = 1024;
+	/** Highest valid port. */
+	public final static int MAX_TEST_PORT = 65535;
+	/** Max test ports/candidates a single client connection may open (H1). */
+	public final static int MAX_CANDIDATES_PER_CLIENT = 20;
+	/** Upper bound for a client-requested socket read timeout in ms (M1). */
+	public final static int MAX_CLIENTHANDLER_CONNECTION_TIMEOUT = 60000;
+
+	/** Number of server-side test ports this connection has opened, for the per-client cap (H1). */
+	private final AtomicInteger openCandidateCount = new AtomicInteger();
 	
 	private final ServerSocket serverSocket;
 	
@@ -271,9 +296,10 @@ public class ClientHandler implements Runnable {
 		try {
 			TestServerConsole.log("Got token: " + token, 0, TestServerServiceEnum.TEST_SERVER);
 			Matcher m = TOKEN_REGEX_PATTERN.matcher(token);
-			m.find();
-			
-			if (m.groupCount()!=3) {
+
+			// Use the find() result, not groupCount() (which is the pattern's constant group count
+			// and never detects a non-match). (Security review M2.)
+			if (!m.find()) {
 				throw new IOException("BAD TOKEN: Bad Arguments!\n");
 			}
 			else {
@@ -281,14 +307,15 @@ public class ClientHandler implements Runnable {
 				long timeStamp = Long.parseLong(m.group(2));
 				String hmac = m.group(3);
 
-				if (CHECK_TOKEN) {
+				if (isTokenCheckEnabled()) {
 					String controlHmac = Helperfunctions.calculateHMAC(TestServer.getInstance().serverPreferences.getSecretKey(), uuid + "_" + timeStamp);
 					if (controlHmac.equals(hmac) && (timeStamp + QoSServiceProtocol.TOKEN_LEGAL_TIME >= System.currentTimeMillis())) {
-						clientToken = new ClientToken(uuid, timeStamp, hmac);	
+						clientToken = new ClientToken(uuid, timeStamp, hmac);
 						return clientToken;
 					}
 					else {
-						throw new IOException("BAD TOKEN. Bad Key!\n" + controlHmac + " <-> " + hmac + "\n");
+						// Do not echo the supplied/expected HMAC back to the client. (Security review L3.)
+						throw new IOException("BAD TOKEN\n");
 					}
 				}
 				else {
@@ -298,11 +325,42 @@ public class ClientHandler implements Runnable {
 		}
 		catch (IOException e) {
 			throw e;
-			
+
 		}
 		catch (Exception e) {
 			e.printStackTrace();
-			throw new IOException("BAD TOKEN: " + token);
+			// Do not echo the raw token back to the client. (Security review L3.)
+			throw new IOException("BAD TOKEN");
+		}
+	}
+
+	/**
+	 * Validates a client-supplied test port and the per-connection candidate cap, then registers a
+	 * TCP candidate. Rejects privileged/out-of-range ports (H1/M3) and limits how many ports a single
+	 * client connection may force the server to open (H1).
+	 */
+	private void registerTcpCandidateChecked(final int port, final String command) throws Exception {
+		validateTestPort(port, command);
+		if (openCandidateCount.incrementAndGet() > MAX_CANDIDATES_PER_CLIENT) {
+			openCandidateCount.decrementAndGet();
+			throw new IOException("too many open test candidates for this client (max "
+					+ MAX_CANDIDATES_PER_CLIENT + "): " + command);
+		}
+		TestServer.getInstance().registerTcpCandidate(port, socket);
+	}
+
+	/** Throws if the client-supplied port is outside the allowed test-port range (H1/M3). */
+	private void validateTestPort(final int port, final String command) throws IOException {
+		if (port < MIN_TEST_PORT || port > MAX_TEST_PORT) {
+			throw new IOException("illegal test port " + port + " (allowed " + MIN_TEST_PORT
+					+ "-" + MAX_TEST_PORT + "): " + command);
+		}
+	}
+
+	/** Throws if a client-supplied magnitude is negative or exceeds {@code max} (H2/H3/M1). */
+	private void requireInRange(final int value, final int max, final String what, final String command) throws IOException {
+		if (value < 0 || value > max) {
+			throw new IOException("illegal " + what + " " + value + " (allowed 0-" + max + "): " + command);
 		}
 	}
     
@@ -315,8 +373,9 @@ public class ClientHandler implements Runnable {
     	int randomPort = 0;
 		Random rand = new Random();
 		if ((TestServer.getInstance().serverPreferences.getUdpPortMax() > 0) && (TestServer.getInstance().serverPreferences.getUdpPortMin() <= TestServer.getInstance().serverPreferences.getUdpPortMax())) {
-			randomPort = rand.nextInt(TestServer.getInstance().serverPreferences.getUdpPortMax() - TestServer.getInstance().serverPreferences.getUdpPortMin()) + 
-					TestServer.getInstance().serverPreferences.getUdpPortMin();			
+			// +1 so the range is inclusive and nextInt() never gets 0 when min == max (L4).
+			randomPort = rand.nextInt((TestServer.getInstance().serverPreferences.getUdpPortMax() - TestServer.getInstance().serverPreferences.getUdpPortMin()) + 1) +
+					TestServer.getInstance().serverPreferences.getUdpPortMin();
 			
 		}
 		TestServerConsole.log("Requested UDP Port. Picked random port number: " + randomPort, 0, TestServerServiceEnum.TEST_SERVER);
@@ -334,14 +393,12 @@ public class ClientHandler implements Runnable {
     	
 		Pattern p = Pattern.compile(QoSServiceProtocol.CMD_TCP_TEST_IN + " ([\\d]*)");
 		Matcher m = p.matcher(command);
-		m.find();
-		if (m.groupCount()!=1) {
+		if (!m.find()) {
 			throw new IOException("tcp incoming test command syntax error: " + command);
 		}
-		else {
-			port = Integer.parseInt(m.group(1));
-		}
-		
+		port = Integer.parseInt(m.group(1));
+		validateTestPort(port, command);  // server dials back to client on this port (M3)
+
 		Runnable tcpInRunnable = new Runnable() {
 			
 			@Override
@@ -384,16 +441,13 @@ public class ClientHandler implements Runnable {
     	
 		Pattern p = Pattern.compile(QoSServiceProtocol.CMD_TCP_TEST_OUT + " ([\\d]*)");
 		Matcher m = p.matcher(command);
-		m.find();
-		if (m.groupCount()!=1) {
+		if (!m.find()) {
 			throw new IOException("tcp outgoing test command syntax error: " + command);
 		}
-		else {
-			port = Integer.parseInt(m.group(1));
-		}
-		
+		port = Integer.parseInt(m.group(1));
+
 		try {
-			TestServer.getInstance().registerTcpCandidate(port, socket);
+			registerTcpCandidateChecked(port, command);
 						
 			sendCommand(QoSServiceProtocol.RESPONSE_OK, command);
 		}
@@ -419,16 +473,13 @@ public class ClientHandler implements Runnable {
     	
 		Pattern p = Pattern.compile(QoSServiceProtocol.CMD_SIP_TEST + " ([\\d]*)");
 		Matcher m = p.matcher(command);
-		m.find();
-		if (m.groupCount()!=1) {
+		if (!m.find()) {
 			throw new IOException("SIP test command syntax error: " + command);
 		}
-		else {
-			port = Integer.parseInt(m.group(1));	
-		}
-		
+		port = Integer.parseInt(m.group(1));
+
 		try {
-			TestServer.getInstance().registerTcpCandidate(port, socket);
+			registerTcpCandidateChecked(port, command);
 					
 			Thread.sleep(100);
 			sendCommand(QoSServiceProtocol.RESPONSE_OK, command);
@@ -457,14 +508,13 @@ public class ClientHandler implements Runnable {
     	
 		Pattern p = Pattern.compile(QoSServiceProtocol.CMD_UDP_TEST_IN + " ([\\d]*) ([\\d]*)");
 		Matcher m = p.matcher(command);
-		m.find();
-		if (m.groupCount()!=2) {
+		if (!m.find()) {
 			throw new IOException("udp incoming test command syntax error: " + command);
 		}
-		else {
-			port = Integer.parseInt(m.group(1));
-			numPackets = Integer.parseInt(m.group(2));
-		}	
+		port = Integer.parseInt(m.group(1));
+		numPackets = Integer.parseInt(m.group(2));
+		validateTestPort(port, command);
+		requireInRange(numPackets, MAX_UDP_PACKETS, "numPackets", command);  // bound UDP flood (H2)
 		
 		//DatagramSocket sock = new DatagramSocket(port);
 		final UdpTestCandidate clientData = new UdpTestCandidate();
@@ -630,15 +680,14 @@ public class ClientHandler implements Runnable {
     	final long timeout = 5000;
 		final Pattern p = Pattern.compile(QoSServiceProtocol.CMD_UDP_TEST_OUT + " ([\\d]*) ([\\d]*)");
 		final Matcher m = p.matcher(command);
-		m.find();
-
-		if (m.groupCount()!=2) {
+		if (!m.find()) {
 			throw new IOException("udp outgoing test command syntax error: " + command);
 		}
 
-    	
     	final int port = Integer.parseInt(m.group(1));
 		final int numPackets = Integer.parseInt(m.group(2));
+		validateTestPort(port, command);
+		requireInRange(numPackets, MAX_UDP_PACKETS, "numPackets", command);  // bound UDP flood (H2)
 
 		TestServerConsole.log("Starting UDP OUT TEST (requested packets: " + numPackets + ") on port :" + port + " for " + socket.getInetAddress().toString(), 
 				1, TestServerServiceEnum.UDP_SERVICE);
@@ -652,7 +701,11 @@ public class ClientHandler implements Runnable {
 			
 			@Override
 			public boolean onReceive(final DatagramPacket dp, final String uuid, final AbstractUdpServer<?> udpServer) {
-				final byte[] data = dp.getData();
+				if (dp.getLength() < 2) {
+					return false;  // too short to carry the identifier + packet number; ignore (L2)
+				}
+				// Parse only the bytes actually received, not the full reusable buffer (L2).
+				final byte[] data = Arrays.copyOf(dp.getData(), dp.getLength());
 				final int packetNumber = data[1];
 				final UdpTestCandidate clientUdpData = udpServer.getClientData(uuid);
 
@@ -678,13 +731,21 @@ public class ClientHandler implements Runnable {
 					clientUdpData.getPacketsReceived().add(Integer.valueOf(packetNumber));
 
 					if (data[0] == QoSServiceProtocol.UDP_TEST_AWAIT_RESPONSE_IDENTIFIER) {
-						data[0] = QoSServiceProtocol.UDP_TEST_RESPONSE;
-						DatagramPacket response = new DatagramPacket(data, dp.getLength(), dp.getAddress(), dp.getPort());
-						try {
-							udpServer.send(response);
+						// Reflect only to the authenticated control-channel peer, never to the (spoofable)
+						// UDP source address, to prevent using the server as a reflector (H3).
+						if (!dp.getAddress().equals(socket.getInetAddress())) {
+							TestServerConsole.log(name + " UDP OUT response suppressed: source " + dp.getAddress()
+									+ " != control client " + socket.getInetAddress(), 0, TestServerServiceEnum.UDP_SERVICE);
 						}
-						catch (Exception e) {
-							//ignore exception (can be a blocked outgoing port; in this case the test should continue normally)
+						else {
+							data[0] = QoSServiceProtocol.UDP_TEST_RESPONSE;
+							DatagramPacket response = new DatagramPacket(data, data.length, dp.getAddress(), dp.getPort());
+							try {
+								udpServer.send(response);
+							}
+							catch (Exception e) {
+								//ignore exception (can be a blocked outgoing port; in this case the test should continue normally)
+							}
 						}
 					}
 					
@@ -772,9 +833,7 @@ public class ClientHandler implements Runnable {
     	 */
 		final Pattern p = Pattern.compile(QoSServiceProtocol.CMD_VOIP_TEST + " ([\\d]*) ([\\w]*) ([\\d]*) ([\\d]*) ([\\d]*) ([\\d]*) ([\\d]*) ([\\d]*) ([\\d]*)");
 		final Matcher m = p.matcher(command);
-		m.find();
-
-		if (m.groupCount()!=9) {
+		if (!m.find()) {
 			throw new IOException("voip test command syntax error: " + command);
 		}
 
@@ -790,6 +849,8 @@ public class ClientHandler implements Runnable {
     	final int bps = Integer.parseInt(m.group(4));
     	final int delay = Integer.parseInt(m.group(5));
     	final int callDuration = Integer.parseInt(m.group(6));
+    	requireInRange(callDuration, MAX_CALL_DURATION_MS, "callDuration", command);  // bound reflection duration (H3)
+    	requireInRange(delay, MAX_PACKET_DELAY_MS, "delay", command);  // (H2)
     	final long sequenceNumber = Integer.parseInt(m.group(7));
     	final int payloadTypeValue = Integer.parseInt(m.group(8));
 		final long buffer = 100 * 1000 * 1000;//// VoipTask.java#L101
@@ -811,11 +872,15 @@ public class ClientHandler implements Runnable {
 			@Override
 			public boolean onReceive(final DatagramPacket dp, final String uuid, final AbstractUdpServer<?> udpServer) {
 				final long timestampNs = System.nanoTime();
-				final byte[] data = dp.getData();
+				final byte[] data = Arrays.copyOf(dp.getData(), dp.getLength());  // parse only received bytes (L2)
 				final VoipTestCandidate clientVoipData = (VoipTestCandidate) udpServer.getClientData(uuid);
 
 				try {
-					if (clientVoipData.getRtpControlDataList().size() == 0) {
+					// Start the RTP response stream only for the first packet AND only when it came from
+					// the authenticated control-channel peer, never from a (spoofable) UDP source — this
+					// prevents using the server to reflect RTP at a victim (H3). Incoming RTP is still
+					// parsed below regardless.
+					if (clientVoipData.getRtpControlDataList().size() == 0 && dp.getAddress().equals(socket.getInetAddress())) {
 						final InetAddress targetAddr = dp.getAddress();
 						final int targetPort = dp.getPort();
 						
@@ -964,16 +1029,13 @@ public class ClientHandler implements Runnable {
 		
 		Pattern p = Pattern.compile(QoSServiceProtocol.CMD_NON_TRANSPARENT_PROXY_TEXT + " ([\\d]*)");
 		Matcher m = p.matcher(command);
-		m.find();
-		if (m.groupCount()!=1) {
+		if (!m.find()) {
 			throw new IOException("non transparent proxy test command syntax error: " + command);
 		}
-		else {
-			echoPort = Integer.parseInt(m.group(1));
-		}
-		
+		echoPort = Integer.parseInt(m.group(1));
+
 		try {
-			TestServer.getInstance().registerTcpCandidate(echoPort, socket);
+			registerTcpCandidateChecked(echoPort, command);
 			
 			sendCommand(QoSServiceProtocol.RESPONSE_OK, command);
 			TestServerConsole.log("NTP: sendind OK. waiting for request...", 1, TestServerServiceEnum.TCP_SERVICE);
@@ -995,14 +1057,15 @@ public class ClientHandler implements Runnable {
     public void requestNewConnectionTimeout(String command) throws IOException {
 		final Pattern p = Pattern.compile(QoSServiceProtocol.REQUEST_NEW_CONNECTION_TIMEOUT + " ([\\d]*)");
 		final Matcher m = p.matcher(command);
-		m.find();
-
-		if (m.groupCount()!=1) {
+		if (!m.find()) {
 			throw new IOException("request new connection timeout command syntax error: " + command);
 		}
-		
+
 		Integer requestedConnTimeout = Integer.parseInt(m.group(1));
-		if (requestedConnTimeout < QoSServiceProtocol.TIMEOUT_CLIENTHANDLER_CONNECTION_MIN_VALUE) {
+		// Enforce an upper bound as well as the lower one, so a client cannot pin a worker thread
+		// indefinitely by raising its socket read timeout (M1).
+		if (requestedConnTimeout < QoSServiceProtocol.TIMEOUT_CLIENTHANDLER_CONNECTION_MIN_VALUE
+				|| requestedConnTimeout > MAX_CLIENTHANDLER_CONNECTION_TIMEOUT) {
 			sendErrorCommand(QoSServiceProtocol.RESPONSE_ERROR_ILLEGAL_ARGUMENT + " " + requestedConnTimeout, command);
 		}
 		else {

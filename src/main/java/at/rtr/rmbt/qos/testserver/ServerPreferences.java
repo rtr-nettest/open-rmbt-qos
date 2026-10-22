@@ -97,6 +97,7 @@ public class ServerPreferences {
 	public static final String ARG_IP = "-IP";
 	public static final String ARG_CONFIG_FILE = "-F";
 	public static final String ARG_SECRET_KEY = "-K";
+	public static final String ARG_NO_TOKEN_CHECK = "-NTC";
 	public static final String ARG_USE_SSL = "-S";
 	public static final String ARG_VERBOSE = "-V";
 	public static final String ARG_VERBOSE2 = "-VV";
@@ -105,7 +106,13 @@ public class ServerPreferences {
 	public static final String PARAM_SERVER_PORT = "server.port";
 	public static final String PARAM_SERVER_THREADS = "server.threads";
 	public static final String PARAM_SERVER_SECRET_KEY = "server.secret";
+	public static final String PARAM_SERVER_TOKEN_CHECK = "server.token.check";
 	public static final String PARAM_SERVER_USE_SSL = "server.ssl";
+	public static final String PARAM_SERVER_SSL_KEYSTORE = "server.ssl.keystore";
+	public static final String PARAM_SERVER_SSL_KEYSTORE_PASSWORD = "server.ssl.keystore.password";
+	public static final String PARAM_SERVER_SSL_KEYSTORE_TYPE = "server.ssl.keystore.type";
+	public static final String PARAM_SERVER_SSL_CERTIFICATE = "server.ssl.certificate";
+	public static final String PARAM_SERVER_SSL_KEY = "server.ssl.key";
 	public static final String PARAM_SERVER_VERBOSE = "server.verbose";
 	public static final String PARAM_SERVER_UDP_MIN_PORT = "server.udp.minport";
 	public static final String PARAM_SERVER_UDP_MAX_PORT = "server.udp.maxport";
@@ -142,9 +149,15 @@ public class ServerPreferences {
 	
 	private int maxThreads = 100;
 	private boolean useSsl = false;
+	private String sslKeystore = null;
+	private String sslKeystorePassword = TestServer.QOS_KEY_PASSWORD;
+	private String sslKeystoreType = null;
+	private String sslCertificate = null;
+	private String sslKey = null;
 	private int verboseLevel = 0;
 	private String secretKey = null;
 	private boolean isIpCheck = false;
+	private boolean isTokenCheck = true;
 	private boolean isLoggingEnabled = true;
 	private String loggingPattern = "%p %d{ISO8601} - %m%n";
 	private boolean isSyslogEnabled = true;
@@ -226,6 +239,9 @@ public class ServerPreferences {
 		    	}
 		    	else if (arg.equals(ARG_SECRET_KEY)) {
 		    		secretKey = args[++i];
+		    	}
+		    	else if (arg.equals(ARG_NO_TOKEN_CHECK)) {
+		    		isTokenCheck = false;
 		    	}
 		    	else if (arg.equals(ARG_USE_SSL)) {
 		    		useSsl = true;
@@ -339,6 +355,31 @@ public class ServerPreferences {
 		   		useSsl = Boolean.parseBoolean(param.trim());
 	   		}
 
+	   		param = prop.getProperty(PARAM_SERVER_SSL_KEYSTORE);
+	   		if (param!=null && !param.trim().isEmpty()) {
+		   		sslKeystore = param.trim();
+	   		}
+
+	   		param = prop.getProperty(PARAM_SERVER_SSL_KEYSTORE_PASSWORD);
+	   		if (param!=null) {
+		   		sslKeystorePassword = param.trim();
+	   		}
+
+	   		param = prop.getProperty(PARAM_SERVER_SSL_KEYSTORE_TYPE);
+	   		if (param!=null && !param.trim().isEmpty()) {
+		   		sslKeystoreType = param.trim();
+	   		}
+
+	   		param = prop.getProperty(PARAM_SERVER_SSL_CERTIFICATE);
+	   		if (param!=null && !param.trim().isEmpty()) {
+		   		sslCertificate = param.trim();
+	   		}
+
+	   		param = prop.getProperty(PARAM_SERVER_SSL_KEY);
+	   		if (param!=null && !param.trim().isEmpty()) {
+		   		sslKey = param.trim();
+	   		}
+
 	   		param = prop.getProperty(PARAM_SERVER_VERBOSE);
 	   		if (param!=null) {
 		   		verboseLevel = Integer.parseInt(param.trim());
@@ -347,6 +388,11 @@ public class ServerPreferences {
 	   		param = prop.getProperty(PARAM_SERVER_SECRET_KEY);
 	   		if (param!=null) {
 		   		secretKey = param.trim();
+	   		}
+
+	   		param = prop.getProperty(PARAM_SERVER_TOKEN_CHECK);
+	   		if (param!=null) {
+		   		isTokenCheck = Boolean.parseBoolean(param.trim());
 	   		}
 
 	   		param = prop.getProperty(PARAM_SERVER_COMMAND_CONSOLE);
@@ -566,6 +612,46 @@ public class ServerPreferences {
 	 * 
 	 * @return
 	 */
+	public String getSslKeystore() {
+		return sslKeystore;
+	}
+
+	/**
+	 * @return PEM file with the certificate chain (leaf first), or null
+	 */
+	public String getSslCertificate() {
+		return sslCertificate;
+	}
+
+	/**
+	 * @return PEM file with the PKCS#8 private key, or null
+	 */
+	public String getSslKey() {
+		return sslKey;
+	}
+
+	public String getSslKeystorePassword() {
+		return sslKeystorePassword;
+	}
+
+	/**
+	 * @return the configured keystore type, or a type derived from the keystore file name
+	 * (PKCS12 for .p12/.pfx, otherwise JKS)
+	 */
+	public String getSslKeystoreType() {
+		if (sslKeystoreType != null) {
+			return sslKeystoreType;
+		}
+		if (sslKeystore != null && (sslKeystore.toLowerCase().endsWith(".p12") || sslKeystore.toLowerCase().endsWith(".pfx"))) {
+			return "PKCS12";
+		}
+		return TestServer.QOS_KEY_TYPE;
+	}
+
+	/**
+	 * 
+	 * @return
+	 */
 	public boolean useSsl() {
 		return useSsl;
 	}
@@ -636,6 +722,7 @@ public class ServerPreferences {
 		System.out.println("-u [min_port_number] [max_port_number] => supported udp port range by this server: from min_port_number to max_port_number (both inclusive).");
 		System.out.println("-t [max_threads] => The max number of threads (clients) this server can handle at the same time (default: 100).");
 		System.out.println("-k [secret_key] => The secret key used for client-server communication.");
+		System.out.println("-ntc => do not verify client tokens (INSECURE, lab/testing only; config: server.token.check=false).");
 		System.out.println("\nExample: -p 5234 -u 10000 20000 => makes the server listen on port 5234 for incoming test requests and let it accept udp test connections on ports 10000 to 20000 (inclusive).");
 		System.out.println("\nIf no parameter is set then the default config file config.properties is being used. If this file isn't found, the default values are being used.");
 		System.out.println("---------------------------------------------");
@@ -679,6 +766,17 @@ public class ServerPreferences {
 	 * 
 	 * @return
 	 */
+	/**
+	 * @return false if client token (HMAC) verification has been disabled (<code>server.token.check=false</code> or <code>-ntc</code>)
+	 */
+	public boolean isTokenCheck() {
+		return isTokenCheck;
+	}
+
+	public void setTokenCheck(boolean isTokenCheck) {
+		this.isTokenCheck = isTokenCheck;
+	}
+
 	public boolean isIpCheck() {
 		return isIpCheck;
 	}
@@ -752,8 +850,10 @@ public class ServerPreferences {
 		return "ServerPreferences [serverPort=" + serverPort + ", udpPortMin="
 				+ udpPortMin + ", udpPortMax=" + udpPortMax + ", udpPortSet="
 				+ udpPortSet + ", maxThreads=" + maxThreads + ", useSsl="
-				+ useSsl + ", verboseLevel=" + verboseLevel + ", secretKey="
-				+ secretKey + ", isIpCheck=" + isIpCheck
+				+ useSsl + ", sslKeystore=" + (sslCertificate != null ? sslCertificate + " + " + sslKey 
+						: sslKeystore != null ? sslKeystore : "classpath:" + TestServer.QOS_KEY_FILE)
+				+ ", verboseLevel=" + verboseLevel + ", secretKey="
+				+ (secretKey != null ? "***" : null) + ", isTokenCheck=" + isTokenCheck + ", isIpCheck=" + isIpCheck
 				+ ", isLoggingEnabled=" + isLoggingEnabled
 				+ ", loggingPattern=" + loggingPattern + ", isSyslogEnabled="
 				+ isSyslogEnabled + ", syslogHost=" + syslogHost

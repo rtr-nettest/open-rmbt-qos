@@ -71,15 +71,25 @@ public class ClientHandler implements Runnable {
 	
 	public final static Pattern ID_REGEX_PATTERN = Pattern.compile("\\+ID([\\d]*)");
 	
-	public final static Pattern TOKEN_REGEX_PATTERN = Pattern.compile("TOKEN ([\\d\\w-]*)_([\\d]*)_(.*)");
+	/**
+	 * TOKEN uuid_timestamp_hmac, optionally followed by further "_"-separated fields (newer clients append
+	 * e.g. "_#v2#..."); the base64 HMAC itself never contains "_".
+	 */
+	public final static Pattern TOKEN_REGEX_PATTERN = Pattern.compile("TOKEN ([\\d\\w-]*)_([\\d]*)_([^_\\s]*)");
 	
 	/**
 	 * Whether identity-token (HMAC) verification is enabled. Secure by default; disable only for
-	 * isolated lab testing with {@code -Dqos.checkToken=false}. Read dynamically so it can be toggled
-	 * at runtime (e.g. by tests). (Security review C1.)
+	 * lab testing with <code>server.token.check=false</code>, the <code>-ntc</code> argument, or
+	 * {@code -Dqos.checkToken=false}. The system property, if set, takes precedence. Read dynamically
+	 * so it can be toggled at runtime (e.g. by tests). (Security review C1.)
 	 */
 	public static boolean isTokenCheckEnabled() {
-		return !"false".equalsIgnoreCase(System.getProperty("qos.checkToken", "true"));
+		final String property = System.getProperty("qos.checkToken");
+		if (property != null) {
+			return !"false".equalsIgnoreCase(property);
+		}
+		final ServerPreferences serverPreferences = TestServer.getInstance().serverPreferences;
+		return serverPreferences == null || serverPreferences.isTokenCheck();
 	}
 
 	// --- Upper bounds for untrusted, client-supplied magnitudes (security review H1/H2/H3/M1/M3) ---
@@ -89,12 +99,14 @@ public class ClientHandler implements Runnable {
 	public final static int MAX_CALL_DURATION_MS = 30000;
 	/** Max inter-packet delay in ms the client may request (H2). */
 	public final static int MAX_PACKET_DELAY_MS = 1000;
-	/** Lowest port a client may ask the server to bind/dial — keeps off privileged ports (H1/M3). */
-	public final static int MIN_TEST_PORT = 1024;
+	/** Lowest port a client may ask the server to bind/dial. The QoS objectives use well-known ports
+	 * (e.g. TCP 21, 25, 80, 110, 143, 993; UDP 53, 123, 500, 554), so privileged ports must be allowed. */
+	public final static int MIN_TEST_PORT = 1;
 	/** Highest valid port. */
 	public final static int MAX_TEST_PORT = 65535;
-	/** Max test ports/candidates a single client connection may open (H1). */
-	public final static int MAX_CANDIDATES_PER_CLIENT = 20;
+	/** Max test ports/candidates a single client connection may open (H1). A client runs all tests
+	 * against one QoS server over a single control connection (currently 18 TCP + 5 NTP + SIP tests). */
+	public final static int MAX_CANDIDATES_PER_CLIENT = 64;
 	/** Upper bound for a client-requested socket read timeout in ms (M1). */
 	public final static int MAX_CLIENTHANDLER_CONNECTION_TIMEOUT = 60000;
 
@@ -309,7 +321,10 @@ public class ClientHandler implements Runnable {
 
 				if (isTokenCheckEnabled()) {
 					String controlHmac = Helperfunctions.calculateHMAC(TestServer.getInstance().serverPreferences.getSecretKey(), uuid + "_" + timeStamp);
-					if (controlHmac.equals(hmac) && (timeStamp + QoSServiceProtocol.TOKEN_LEGAL_TIME >= System.currentTimeMillis())) {
+					// The control server issues the test slot as epoch seconds (rmbt_get_next_test_slot);
+					// accept millisecond timestamps as well.
+					final long timeStampMs = timeStamp < 100_000_000_000L ? timeStamp * 1000 : timeStamp;
+					if (controlHmac.equals(hmac) && (timeStampMs + QoSServiceProtocol.TOKEN_LEGAL_TIME >= System.currentTimeMillis())) {
 						clientToken = new ClientToken(uuid, timeStamp, hmac);
 						return clientToken;
 					}

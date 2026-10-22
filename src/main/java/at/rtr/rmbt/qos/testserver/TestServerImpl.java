@@ -18,6 +18,7 @@
 package at.rtr.rmbt.qos.testserver;
 
 import java.io.Closeable;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
@@ -28,9 +29,18 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.nio.channels.DatagramChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.security.KeyFactory;
 import java.security.KeyStore;
+import java.security.PrivateKey;
 import java.security.SecureRandom;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -202,6 +212,74 @@ public class TestServerImpl {
 	}
 
 	/**
+	 * Loads the TLS keystore: from the file configured with <code>server.ssl.keystore</code> or,
+	 * if none is configured, from the classpath resource {@link TestServer#QOS_KEY_FILE}.
+	 * @throws TestServerException if no keystore can be found
+	 */
+	public static KeyStore loadKeyStore(final ServerPreferences serverPreferences) throws Exception {
+		if (serverPreferences.getSslCertificate() != null || serverPreferences.getSslKey() != null) {
+			return loadPemKeyStore(serverPreferences);
+		}
+		final KeyStore ks = KeyStore.getInstance(serverPreferences.getSslKeystoreType());
+		final String keystoreFile = serverPreferences.getSslKeystore();
+		try (InputStream fis = keystoreFile != null ? new FileInputStream(keystoreFile) 
+				: TestServer.class.getResourceAsStream(TestServer.QOS_KEY_FILE)) {
+			if (fis == null) {
+				throw new TestServerException("ERROR: SSL is enabled but no keystore was found. Set '" 
+						+ ServerPreferences.PARAM_SERVER_SSL_KEYSTORE + "' (and '" + ServerPreferences.PARAM_SERVER_SSL_KEYSTORE_PASSWORD 
+						+ "') in the config file or embed a keystore at " + TestServer.QOS_KEY_FILE + " in the jar.", null);
+			}
+			ks.load(fis, serverPreferences.getSslKeystorePassword().toCharArray());
+		}
+		return ks;
+	}
+
+	/**
+	 * Builds an in-memory keystore from a PEM certificate chain (<code>server.ssl.certificate</code>, e.g. a
+	 * Let's Encrypt fullchain.pem) and a PEM PKCS#8 private key (<code>server.ssl.key</code>, e.g. privkey.pem).
+	 */
+	private static KeyStore loadPemKeyStore(final ServerPreferences serverPreferences) throws Exception {
+		if (serverPreferences.getSslCertificate() == null || serverPreferences.getSslKey() == null) {
+			throw new TestServerException("ERROR: both '" + ServerPreferences.PARAM_SERVER_SSL_CERTIFICATE + "' and '" 
+					+ ServerPreferences.PARAM_SERVER_SSL_KEY + "' have to be set.", null);
+		}
+		
+		final List<Certificate> chain = new ArrayList<>();
+		try (InputStream in = new FileInputStream(serverPreferences.getSslCertificate())) {
+			chain.addAll(CertificateFactory.getInstance("X.509").generateCertificates(in));
+		}
+		if (chain.isEmpty()) {
+			throw new TestServerException("ERROR: no certificate found in " + serverPreferences.getSslCertificate(), null);
+		}
+		
+		final String pem = new String(Files.readAllBytes(Paths.get(serverPreferences.getSslKey())), StandardCharsets.US_ASCII);
+		if (!pem.contains("-----BEGIN PRIVATE KEY-----")) {
+			throw new TestServerException("ERROR: " + serverPreferences.getSslKey() 
+					+ " is not an unencrypted PKCS#8 PEM key (-----BEGIN PRIVATE KEY-----). Convert it with: openssl pkcs8 -topk8 -nocrypt", null);
+		}
+		final byte[] der = Base64.getMimeDecoder().decode(pem.replaceAll("-----(BEGIN|END) PRIVATE KEY-----", "").trim());
+		final PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(der);
+		PrivateKey privateKey = null;
+		for (String algorithm : new String[] {chain.get(0).getPublicKey().getAlgorithm(), "EC", "RSA", "Ed25519"}) {
+			try {
+				privateKey = KeyFactory.getInstance(algorithm).generatePrivate(keySpec);
+				break;
+			}
+			catch (Exception e) {
+				// try next algorithm
+			}
+		}
+		if (privateKey == null) {
+			throw new TestServerException("ERROR: unsupported private key in " + serverPreferences.getSslKey(), null);
+		}
+		
+		final KeyStore ks = KeyStore.getInstance("PKCS12");
+		ks.load(null, null);
+		ks.setKeyEntry("qos", privateKey, serverPreferences.getSslKeystorePassword().toCharArray(), chain.toArray(new Certificate[0]));
+		return ks;
+	}
+
+	/**
 	 * @throws TestServerException 
 	 * 
 	 */
@@ -215,6 +293,11 @@ public class TestServerImpl {
 		
 	    TestServerConsole.log("\nStarting QoSTestServer (" + TestServer.TEST_SERVER_VERSION_NAME + ") with settings: \n" + serverPreferences.toString() + "\n\n", 
 	    		-1, TestServerServiceEnum.TEST_SERVER);
+	    
+	    if (!ClientHandler.isTokenCheckEnabled()) {
+	    	TestServerConsole.log("WARNING: client token verification is DISABLED - every client is accepted without authentication!", 
+	    			-1, TestServerServiceEnum.TEST_SERVER);
+	    }
 	    
 		console.start();
 	    
@@ -232,14 +315,11 @@ public class TestServerImpl {
 			     * initialize SSLContext and SSLServerSocketFactory:
 			     */
 
-	            KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+	            KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
 	            
-	            // Load the JKS key chain
-	            KeyStore ks = KeyStore.getInstance(TestServer.QOS_KEY_TYPE);
-	            InputStream fis = TestServer.class.getResourceAsStream(TestServer.QOS_KEY_FILE);//new FileInputStream(serverKey);
-	            ks.load(fis, TestServer.QOS_KEY_PASSWORD.toCharArray());
-	            fis.close();
-	            kmf.init(ks, TestServer.QOS_KEY_PASSWORD.toCharArray());
+	            // Load the key chain
+	            KeyStore ks = loadKeyStore(serverPreferences);
+	            kmf.init(ks, serverPreferences.getSslKeystorePassword().toCharArray());
 			    final SSLContext sslContext = SSLContext.getInstance("TLS");
 	            // Initialize the SSL context
 	            sslContext.init(kmf.getKeyManagers(), new TrustManager[] {TestServer.getTrustingManager()}, new SecureRandom());

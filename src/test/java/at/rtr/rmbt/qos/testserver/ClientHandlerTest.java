@@ -36,6 +36,7 @@ import org.mockito.MockedStatic;
 
 import at.rtr.rmbt.qos.testserver.entity.ClientToken;
 import at.rtr.rmbt.qos.testserver.util.TestServerConsole;
+import at.rtr.rmbt.shared.Helperfunctions;
 
 /**
  * Unit tests for {@link ClientHandler}.
@@ -169,6 +170,32 @@ public class ClientHandlerTest {
 					ch.checkToken("TOKEN bbd1ee96-0779-4619-b993-bb4bf7089754_1528136454_3gr2gw9lVhtVONV0XO62Vamu/uw=\n"));
 		}
 		finally {
+			restoreProperty("qos.checkToken", previous);
+		}
+	}
+
+	@Test
+	public void testCheckTokenAcceptsControlServerTokenWithSecondsTimestamp() throws Exception {
+		// The control server issues the test slot as epoch seconds (rmbt_get_next_test_slot).
+		final CapturingSocket socket = new CapturingSocket(null);
+		final String previous = System.getProperty("qos.checkToken");
+		System.setProperty("qos.checkToken", "true");
+		final ServerPreferences previousPreferences = TestServer.getInstance().serverPreferences;
+		try (ServerSocket serverSocket = new ServerSocket();
+		     MockedStatic<TestServerConsole> console = mockStatic(TestServerConsole.class)) {
+			final ServerPreferences sp = new ServerPreferences((String[]) null);
+			sp.setSecretKey("secret");
+			TestServer.getInstance().serverPreferences = sp;
+
+			final String data = "bbd1ee96-0779-4619-b993-bb4bf7089754_" + (System.currentTimeMillis() / 1000);
+			final ClientHandler ch = new ClientHandler(serverSocket, socket);
+			assertNotNull(ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("secret", data) + "\n"));
+			assertThrows(IOException.class, () -> ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("other", data) + "\n"));
+			// newer clients append further fields after the HMAC
+			assertNotNull(ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("secret", data) + "_#v2#ato5KX0xLOYfJswZcjbThw==\n"));
+		}
+		finally {
+			TestServer.getInstance().serverPreferences = previousPreferences;
 			restoreProperty("qos.checkToken", previous);
 		}
 	}

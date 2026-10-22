@@ -96,7 +96,9 @@ Settings are read by `ServerPreferences`. Precedence:
 |---|---|
 | `server.ip` | Interface IP(s) to bind to. Comma-separated list, IPv4/IPv6. Omit ⇒ `0.0.0.0` (all interfaces). |
 | `server.port` | TCP control port clients connect to (default `5234`; the shipped `config.properties` sets `5233`). |
-| `server.ssl` | `true`/`false`. Wrap the control port in TLS using the keystore `/crt/qosserver.jks` (see [TLS](#tls)). |
+| `server.ssl` | `true`/`false`. Wrap the control port in TLS (certificate source: see the next rows) (see [TLS](#tls)). |
+| `server.ssl.certificate` / `server.ssl.key` | PEM certificate chain (e.g. Let's Encrypt `fullchain.pem`) and unencrypted PKCS#8 PEM private key (`privkey.pem`). Takes precedence over a keystore. Restart the server after a certificate renewal. |
+| `server.ssl.keystore` / `server.ssl.keystore.password` / `server.ssl.keystore.type` | Alternatively a JKS or PKCS12 keystore file (type derived from the `.p12`/`.pfx` extension if not set). If neither PEM files nor a keystore are configured, the keystore is loaded from `/crt/qosserver.jks` inside the jar. |
 | `server.threads` | Size of the fixed worker thread pool ≈ max simultaneous clients. Minimum 5 (startup fails below that); a warning is printed at ≤ 10. |
 | `server.ip.check` | `true`/`false`. If true, only client IPs registered during test setup receive responses (a per-IP candidate map is enforced). |
 | `server.udp.minport` / `server.udp.maxport` | Inclusive UDP port range opened for UDP tests. |
@@ -104,6 +106,7 @@ Settings are read by `ServerPreferences`. Precedence:
 | `server.udp.nio.ports` | Non-blocking (NIO) UDP ports (comma list). Required for VoIP tests (bidirectional streams). A port may not appear in both the blocking and NIO sets. |
 | `server.tcp.competence.sip` | TCP ports (comma list) that additionally speak the SIP test protocol, e.g. `5060`. |
 | `server.secret` | HMAC secret for client-token verification. **Required by default**: verification is enabled (`ClientHandler.isTokenCheckEnabled()`, default `true`), so this must equal the Control Server's token-signing key or all clients are rejected. Disable for isolated lab use with `-Dqos.checkToken=false`. |
+| `server.token.check` | `true` (default) / `false`. `false` accepts every client token without verifying the HMAC or its age (lab/testing only). Same as the `-ntc` argument; `-Dqos.checkToken=true/false` overrides both. A warning is logged at startup when verification is off. |
 | `server.verbose` | `0`/`1`/`2`. Does not control log output (Logback log levels do); it affects the interactive console and a few explicit `verbose >= 1` code paths. |
 
 ### REST monitoring service
@@ -148,6 +151,7 @@ not loaded automatically (use `-f` to load one).
 | `-ip <ip>` | Bind interface IP (repeatable). |
 | `-ic` | Enable the client IP check (`server.ip.check`). |
 | `-s` | Enable TLS on the control port. |
+| `-ntc` | Disable client-token verification (`server.token.check=false`). Insecure, lab/testing only. |
 | `-k <secret>` | HMAC secret key — required by default for token verification (see the `server.secret` note above). |
 | `-v` / `-vv` | Verbose level 1 / 2. |
 | `-l <file>` | Set the main log file. No effect (logging is controlled by `logback.xml`). |
@@ -264,14 +268,21 @@ read `status` to alert on crashes.
 
 ## TLS
 
-When `server.ssl=true` (or `server.service.rest.ssl=true`) the server loads a `JKS` keystore from the
-classpath at **`/crt/qosserver.jks`**. This keystore is not included in the repository; provide your
-own at build/packaging time.
+When `server.ssl=true` the server builds its TLS context from, in this order:
+
+1. `server.ssl.certificate` + `server.ssl.key` — PEM files, e.g. directly from Let's Encrypt:
+   ```properties
+   server.ssl.certificate=/etc/letsencrypt/live/example.org/fullchain.pem
+   server.ssl.key=/etc/letsencrypt/live/example.org/privkey.pem
+   ```
+2. `server.ssl.keystore` (+ `server.ssl.keystore.password`) — a JKS or PKCS12 file,
+3. the classpath resource **`/crt/qosserver.jks`** (not included in the repository).
+
+The REST interface (`server.service.rest.ssl=true`) only supports a keystore file (`server.ssl.keystore`).
 
 The TLS context is created with `SSLContext.getInstance("TLS")` and no explicit protocol or cipher
 configuration, so the JDK negotiates the protocol version (TLS 1.2/1.3 on JDK 17–25) and default
-cipher suites. The keystore password is hard-coded in the source (`TestServer.QOS_KEY_PASSWORD`), the
-keystore must be embedded in the jar, the server uses a trust-all client `TrustManager` (clients are
+cipher suites. The default keystore password is hard-coded in the source (`TestServer.QOS_KEY_PASSWORD`), the server uses a trust-all client `TrustManager` (clients are
 authenticated by the HMAC token, not by client certificates), and protocols/ciphers/cert rotation are
 not configurable without code changes. For production, terminating TLS with a wrapper such as
 **stunnel** (or a reverse proxy) in front of the plain control port is recommended.

@@ -85,10 +85,11 @@ public class RestService extends ServiceSetting {
 
 			    if (isSsl) {
 				    Series<Parameter> parameters = s.getContext().getParameters();				    
-				    parameters.add("keystorePath", QOS_KEY_FILE_ABSOLUTE);
-				    parameters.add("keystorePassword", TestServer.QOS_KEY_PASSWORD);
-				    parameters.add("keyPassword", TestServer.QOS_KEY_PASSWORD);
-				    parameters.add("keystoreType", TestServer.QOS_KEY_TYPE);
+				    final String keystorePath = serverPreferences.getSslKeystore() != null ? serverPreferences.getSslKeystore() : QOS_KEY_FILE_ABSOLUTE;
+				    parameters.add("keystorePath", keystorePath);
+				    parameters.add("keystorePassword", serverPreferences.getSslKeystorePassword());
+				    parameters.add("keyPassword", serverPreferences.getSslKeystorePassword());
+				    parameters.add("keystoreType", serverPreferences.getSslKeystoreType());
 			    }
 
 			    component.getDefaultHost().attach("", new RestletApplication());

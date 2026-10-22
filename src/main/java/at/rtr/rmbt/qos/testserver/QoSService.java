@@ -81,6 +81,10 @@ public class QoSService implements Runnable {
 					if (e instanceof InterruptedException) {
 						throw e;
 					}
+					if (socket.isClosed()) {
+						//server socket closed during shutdown
+						throw new InterruptedException();
+					}
 					TestServerConsole.error(name + "Exception. Trying to continue service:", e, 0, TestServerServiceEnum.TEST_SERVER);
 				}
 			}

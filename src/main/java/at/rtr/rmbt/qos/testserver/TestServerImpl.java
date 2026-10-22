@@ -96,7 +96,37 @@ public class TestServerImpl {
 	public ServerPreferences serverPreferences;
 	public final ServiceManager serviceManager = new ServiceManager();
 	
-	public final Set<ClientHandler> clientHandlerSet = new HashSet<>();
+	public final Set<ClientHandler> clientHandlerSet = ConcurrentHashMap.newKeySet();
+	
+	/**
+	 * number of open control connections per client IP (see {@link ServerPreferences#getMaxConnectionsPerIp()})
+	 */
+	private final ConcurrentHashMap<InetAddress, Integer> connectionsPerIp = new ConcurrentHashMap<>();
+	
+	/**
+	 * registers a new control connection
+	 * @return false if the client IP already has the max. number of open connections
+	 */
+	public boolean acquireConnection(final InetAddress addr) {
+		final int max = serverPreferences.getMaxConnectionsPerIp();
+		final boolean[] accepted = {false};
+		connectionsPerIp.compute(addr, (k, count) -> {
+			final int current = count == null ? 0 : count;
+			if (current >= max) {
+				return count;
+			}
+			accepted[0] = true;
+			return current + 1;
+		});
+		return accepted[0];
+	}
+	
+	/**
+	 * releases a control connection registered with {@link #acquireConnection(InetAddress)}
+	 */
+	public void releaseConnection(final InetAddress addr) {
+		connectionsPerIp.computeIfPresent(addr, (k, count) -> count <= 1 ? null : count - 1);
+	}
 	
 	/**
 	 * 

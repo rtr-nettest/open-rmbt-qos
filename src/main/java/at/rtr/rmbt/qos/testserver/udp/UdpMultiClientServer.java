@@ -20,8 +20,6 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.text.DateFormat;
 import java.util.Date;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -30,8 +28,6 @@ import at.rtr.rmbt.qos.testserver.servers.AbstractUdpServer;
 import at.rtr.rmbt.qos.testserver.ServerPreferences.TestServerServiceEnum;
 import at.rtr.rmbt.qos.testserver.TestServer;
 import at.rtr.rmbt.qos.testserver.util.TestServerConsole;
-import at.rtr.rmbt.util.net.rtp.RealtimeTransportProtocol.RtpVersion;
-import at.rtr.rmbt.util.net.rtp.RtpUtil;
 
 /**
  * 
@@ -105,83 +101,7 @@ public class UdpMultiClientServer extends AbstractUdpServer<DatagramSocket> impl
 				//set last client timestamp
 				lastClientTime = System.currentTimeMillis();
 			
-				final byte[] data = dp.getData();
-				
-				final RtpVersion rtpVersion = 
-						(data != null && data.length > 0) ? RtpUtil.getVersion(data[0]) : RtpVersion.UNKNOWN;
-				
-				String clientUuid = null;
-				
-				if (!RtpVersion.VER2.equals(rtpVersion) && data.length > 1) {
-					//Non RTP packet:
-					final int packetNumber = data[1];
-					
-					Long timeStamp = null;
-					
-					try {
-						char[] uuid = new char[36];
-						
-						for (int i = 2; i < 38; i++) {
-							uuid[i - 2] = (char) data[i];
-						}
-						clientUuid = String.valueOf(uuid);
-						
-						// timestamp
-						ByteBuffer byteBuffer = ByteBuffer.allocateDirect(dp.getLength() - 38);
-					    byteBuffer.order(ByteOrder.BIG_ENDIAN);
-						
-						for (int i = 38; i < dp.getLength(); i++) {
-							byteBuffer.put(data[i]);
-						}
-						
-						byteBuffer.flip();
-					    timeStamp = byteBuffer.getLong();
-						
-					}
-					catch (Exception e) {
-						TestServerConsole.error(getName(), e, 1, TestServerServiceEnum.UDP_SERVICE);
-					}
-					
-					TestServerConsole.log("received UDP from: " + dp.getAddress().toString() + ":" + dp.getPort() 
-							+ " (on local port :" + socket.getLocalPort() + ") , #" + packetNumber + " TimeStamp: " + timeStamp + ", containing: " + clientUuid, 1, TestServerServiceEnum.UDP_SERVICE);
-					
-				}
-				else if (data.length > 1) {
-					//RtpPacket received:
-					clientUuid = "VOIP_" + RtpUtil.getSsrc(data);
-				}
-				
-				if (clientUuid != null) {
-					synchronized (incomingMap) {
-						final UdpTestCandidate clientData;
-						final String uuid = clientUuid;
-						if (!incomingMap.containsKey(clientUuid)) {
-							clientData = new UdpTestCandidate();
-							clientData.setNumPackets(Integer.MAX_VALUE);
-							clientData.setRemotePort(dp.getPort());
-							incomingMap.put(clientUuid, clientData);
-						}
-						else {
-							clientData = (UdpTestCandidate) incomingMap.get(clientUuid);
-							if (clientData.isError()) {
-								continue;
-							}
-						}
-						
-						//if a callback has been provided by the clienthandler run it in the background:
-						if (clientData.getOnUdpPacketReceivedCallback() != null) {
-							Runnable onReceiveRunnable = new Runnable() {
-								
-								@Override
-								public void run() {
-									clientData.getOnUdpPacketReceivedCallback().onReceive(dp, uuid, UdpMultiClientServer.this);									
-								}
-							};
-							
-							TestServer.getInstance().getCommonThreadPool().submit(onReceiveRunnable);
-						}						
-					}
-				}
+				dispatchPacket(dp);
 			}		
 		} 
 		catch (IOException e) {

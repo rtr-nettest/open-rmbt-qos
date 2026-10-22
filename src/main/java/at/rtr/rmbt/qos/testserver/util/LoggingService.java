@@ -25,6 +25,10 @@ import at.rtr.rmbt.qos.testserver.TestServerImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import ch.qos.logback.classic.LoggerContext;
+import net.logstash.logback.appender.LogstashTcpSocketAppender;
+import net.logstash.logback.encoder.LogstashEncoder;
+
 /**
  * Logging service for the test server.
  *
@@ -73,8 +77,39 @@ public class LoggingService {
 	 * No-op: appenders are configured via {@code logback.xml}. Retained so existing callers
 	 * ({@code TestServerImpl}) continue to compile and run unchanged.
 	 */
+	/**
+	 * Logback is initialised from logback.xml (console) on first logger use. If the LOG_HOST environment variable
+	 * (or system property) is set, JSON logs are additionally sent to Logstash at LOG_HOST:LOG_PORT (default port 4560).
+	 * This is configured here rather than with a logback.xml conditional, which needs Janino / changed between logback versions.
+	 */
 	public static void init(final TestServerImpl testServerImpl) {
-		// Logback is initialised from logback.xml on first logger use; nothing to do here.
+		final String logHost = getSetting("LOG_HOST");
+		if (logHost == null || logHost.isBlank()) {
+			return;
+		}
+		final String logPort = getSetting("LOG_PORT");
+		final String destination = logHost.trim() + ":" + (logPort == null || logPort.isBlank() ? "4560" : logPort.trim());
+		
+		final LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
+		final LogstashEncoder encoder = new LogstashEncoder();
+		encoder.setContext(loggerContext);
+		encoder.setCustomFields("{\"app_name\":\"qos-service\"}");
+		encoder.start();
+		
+		final LogstashTcpSocketAppender appender = new LogstashTcpSocketAppender();
+		appender.setName("logstash");
+		appender.setContext(loggerContext);
+		appender.addDestination(destination);
+		appender.setEncoder(encoder);
+		appender.start();
+		
+		loggerContext.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).addAppender(appender);
+		logger(TestServerServiceEnum.TEST_SERVER).info("Sending logs to Logstash at " + destination);
+	}
+	
+	private static String getSetting(final String name) {
+		final String value = System.getProperty(name);
+		return value != null ? value : System.getenv(name);
 	}
 
 	/**

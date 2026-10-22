@@ -110,6 +110,7 @@ public class ServerPreferences {
 	
 	public static final String PARAM_SERVER_PORT = "server.port";
 	public static final String PARAM_SERVER_THREADS = "server.threads";
+	public static final String PARAM_SERVER_MAX_CONNECTIONS_PER_IP = "server.connections.perip";
 	public static final String PARAM_SERVER_SECRET_KEY = "server.secret";
 	public static final String PARAM_SERVER_TOKEN_CHECK = "server.token.check";
 	public static final String PARAM_SERVER_TOKEN_V2_ONLY = "server.token.v2only";
@@ -154,6 +155,8 @@ public class ServerPreferences {
 	private final Map<Integer, TcpCompetence> tcpCompetenceMap = new HashMap<>();
 	
 	private int maxThreads = 100;
+	/** max concurrent control connections per client IP (newer clients open one connection per test) */
+	private int maxConnectionsPerIp = 50;
 	private boolean useSsl = false;
 	private String sslKeystore = null;
 	private String sslKeystorePassword = TestServer.QOS_KEY_PASSWORD;
@@ -406,6 +409,11 @@ public class ServerPreferences {
 	   			if (name.startsWith(PARAM_SERVER_SECRET_KEY + ".")) {
 	   				addSecretKeys(name.substring(PARAM_SERVER_SECRET_KEY.length() + 1), prop.getProperty(name));
 	   			}
+	   		}
+
+	   		param = prop.getProperty(PARAM_SERVER_MAX_CONNECTIONS_PER_IP);
+	   		if (param!=null) {
+		   		maxConnectionsPerIp = Integer.parseInt(param.trim());
 	   		}
 
 	   		param = prop.getProperty(PARAM_SERVER_TOKEN_CHECK);
@@ -839,6 +847,14 @@ public class ServerPreferences {
 		this.isTokenCheck = isTokenCheck;
 	}
 
+	public int getMaxConnectionsPerIp() {
+		return maxConnectionsPerIp;
+	}
+
+	public void setMaxConnectionsPerIp(int maxConnectionsPerIp) {
+		this.maxConnectionsPerIp = maxConnectionsPerIp;
+	}
+
 	public boolean isIpCheck() {
 		return isIpCheck;
 	}
@@ -911,7 +927,7 @@ public class ServerPreferences {
 	public String toString() {
 		return "ServerPreferences [serverPort=" + serverPort + ", udpPortMin="
 				+ udpPortMin + ", udpPortMax=" + udpPortMax + ", udpPortSet="
-				+ udpPortSet + ", maxThreads=" + maxThreads + ", useSsl="
+				+ udpPortSet + ", maxThreads=" + maxThreads + ", maxConnectionsPerIp=" + maxConnectionsPerIp + ", useSsl="
 				+ useSsl + ", sslKeystore=" + (sslCertificate != null ? sslCertificate + " + " + sslKey 
 						: sslKeystore != null ? sslKeystore : "classpath:" + TestServer.QOS_KEY_FILE)
 				+ ", verboseLevel=" + verboseLevel + ", secretKey="

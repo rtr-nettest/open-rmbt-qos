@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import at.rtr.rmbt.qos.testserver.tcp.competences.Action;
 import at.rtr.rmbt.qos.testserver.tcp.competences.Competence;
 import at.rtr.rmbt.qos.testserver.tcp.competences.ResponseAction;
+import at.rtr.rmbt.qos.testserver.util.LineReader;
 import at.rtr.rmbt.qos.testserver.util.TestServerConsole;
 import at.rtr.rmbt.qos.testserver.ServerPreferences.TestServerServiceEnum;
 import at.rtr.rmbt.qos.testserver.TestServer;
@@ -45,6 +46,11 @@ public class TcpClientHandler implements Runnable {
 	 * 
 	 */
 	public final static int TCP_HANDLER_TIMEOUT = 10000;
+	
+	/**
+	 * max requests (lines/SIP messages) a client may send on one connection to a test port
+	 */
+	public final static int MAX_REQUESTS_PER_CONNECTION = 10;
 
 	/**
 	 * 
@@ -102,10 +108,20 @@ public class TcpClientHandler implements Runnable {
 					tcpServer.get().removeCandidate(clientSocket.getInetAddress());
 				}
 
+				int requests = 0;
 				do {
+					// bounded, so a client cannot keep the test port open forever (SIP competence repeats)
+					if (++requests > MAX_REQUESTS_PER_CONNECTION) {
+						TestServerConsole.log(name + " max requests per connection reached, closing", 1, TestServerServiceEnum.TCP_SERVICE);
+						break;
+					}
 					tcpServer.get().refreshTtl(TcpMultiClientServer.TTL);
-										
-					String clientRequest = br.readLine() + "\n";
+					
+					final String line = LineReader.readLine(br);
+					if (line == null) {
+						break;
+					}
+					String clientRequest = line + "\n";
 
 					repeat.set(false);
 					

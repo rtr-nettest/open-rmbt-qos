@@ -24,6 +24,8 @@ import java.util.List;
 import at.rtr.rmbt.qos.testserver.tcp.competences.SleepAction;
 import com.google.common.base.Strings;
 
+import at.rtr.rmbt.qos.testserver.util.LineReader;
+
 import at.rtr.rmbt.qos.testserver.tcp.competences.Action;
 import at.rtr.rmbt.qos.testserver.tcp.competences.Competence;
 import at.rtr.rmbt.qos.testserver.tcp.competences.RepeatAction;
@@ -40,6 +42,11 @@ import at.rtr.rmbt.util.net.sip.SipUtil;
  *
  */
 public class SipCompetence implements Competence {
+	
+	/**
+	 * max number of lines of a SIP message (start line + headers)
+	 */
+	public final static int MAX_HEADER_LINES = 64;
 
 	@Override
 	public boolean appliesTo(final String data) {
@@ -52,7 +59,11 @@ public class SipCompetence implements Competence {
 		final StringBuilder sb = new StringBuilder();
 		sb.append(firstLine).append("\n");
 		String line = null;
-		while((line = br.readLine()) != null) {
+		int lines = 1;
+		while((line = LineReader.readLine(br)) != null) {
+			if (++lines > MAX_HEADER_LINES) {
+				throw new IOException("SIP request exceeds " + MAX_HEADER_LINES + " lines");
+			}
 			sb.append(line).append("\n");
 			if (Strings.isNullOrEmpty(line)) {
 				break;

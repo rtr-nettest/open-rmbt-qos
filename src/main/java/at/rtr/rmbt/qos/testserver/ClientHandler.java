@@ -36,6 +36,9 @@ import java.util.Arrays;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -47,6 +50,7 @@ import at.rtr.rmbt.qos.testserver.udp.UdpPacketReceivedCallback;
 import at.rtr.rmbt.qos.testserver.udp.UdpTestCandidate;
 import at.rtr.rmbt.qos.testserver.udp.UdpTestCompleteCallback;
 import at.rtr.rmbt.qos.testserver.udp.VoipTestCandidate;
+import at.rtr.rmbt.qos.testserver.util.LineReader;
 import at.rtr.rmbt.qos.testserver.util.TestServerConsole;
 import com.google.gson.Gson;
 
@@ -99,24 +103,43 @@ public class ClientHandler implements Runnable {
 	}
 
 	// --- Upper bounds for untrusted, client-supplied magnitudes (security review H1/H2/H3/M1/M3) ---
-	/** Max UDP packets the client may make the server send (H2). */
-	public final static int MAX_UDP_PACKETS = 1000;
+	/** Max UDP packets per UDP test (H2); the QoS objectives use 5. */
+	public final static int MAX_UDP_PACKETS = 100;
 	/** Max VoIP/RTP reflection stream duration in ms (H3). */
 	public final static int MAX_CALL_DURATION_MS = 30000;
 	/** Max inter-packet delay in ms the client may request (H2). */
 	public final static int MAX_PACKET_DELAY_MS = 1000;
+	/** Min VoIP inter-packet delay in ms (max 100 RTP packets/s; 0 would also divide by zero). */
+	public final static int MIN_PACKET_DELAY_MS = 10;
+	/** Max VoIP sample rate in Hz. */
+	public final static int MAX_SAMPLE_RATE = 96000;
+	/** Max VoIP bits per sample. */
+	public final static int MAX_BITS_PER_SAMPLE = 32;
+	/** Max RTP payload per packet in bytes (has to fit into one datagram). */
+	public final static int MAX_RTP_PAYLOAD = 1400;
 	/** Lowest port a client may ask the server to bind/dial. The QoS objectives use well-known ports
 	 * (e.g. TCP 21, 25, 80, 110, 143, 993; UDP 53, 123, 500, 554), so privileged ports must be allowed. */
 	public final static int MIN_TEST_PORT = 1;
 	/** Highest valid port. */
 	public final static int MAX_TEST_PORT = 65535;
-	/** Max test ports/candidates a single client connection may open (H1). A client runs all tests
-	 * against one QoS server over a single control connection (currently 18 TCP + 5 NTP + SIP tests). */
+	/** Max tests a single client connection may start: TCP test ports (H1) as well as UDP and VoIP tests,
+	 * which each occupy a thread/stream. The reference client runs all tests over one connection 
+	 * (currently 18 TCP + 5 NTP + 2 UDP + VoIP), newer clients open one connection per test. */
 	public final static int MAX_CANDIDATES_PER_CLIENT = 64;
+	/** Time a client has to authenticate (TLS handshake + valid TOKEN) after connecting, in ms; the
+	 * connection is closed when it expires, regardless of whether the client is still sending data. */
+	public final static int TIMEOUT_HANDSHAKE = 10000;
+	
+	/** closes connections which did not authenticate within {@link #TIMEOUT_HANDSHAKE} */
+	private final static ScheduledExecutorService HANDSHAKE_TIMER = Executors.newSingleThreadScheduledExecutor(r -> {
+		final Thread t = new Thread(r, "handshake-timeout");
+		t.setDaemon(true);
+		return t;
+	});
 	/** Upper bound for a client-requested socket read timeout in ms (M1). */
 	public final static int MAX_CLIENTHANDLER_CONNECTION_TIMEOUT = 60000;
 
-	/** Number of server-side test ports this connection has opened, for the per-client cap (H1). */
+	/** Number of tests this connection has started, for the per-client cap (H1). */
 	private final AtomicInteger openCandidateCount = new AtomicInteger();
 	
 	private final ServerSocket serverSocket;
@@ -169,16 +192,50 @@ public class ClientHandler implements Runnable {
 		String command = null;
 		
 		try {
-			socket.setSoTimeout(QoSServiceProtocol.TIMEOUT_CLIENTHANDLER_CONNECTION_MIN_VALUE);
+			// an unauthenticated client gets a fixed time for the TLS handshake and the token
+			socket.setSoTimeout(TIMEOUT_HANDSHAKE);
+			final ScheduledFuture<?> handshakeTimeout = HANDSHAKE_TIMER.schedule(() -> {
+				TestServerConsole.log(name + " not authenticated within " + TIMEOUT_HANDSHAKE + "ms, closing connection", 1, TestServerServiceEnum.TEST_SERVER);
+				try {
+					socket.close();
+				}
+				catch (IOException e) {
+					// ignore
+				}
+			}, TIMEOUT_HANDSHAKE, TimeUnit.MILLISECONDS);
 			
-			out.write(getBytesWithNewline(QoSServiceProtocol.RESPONSE_GREETING));
-			out.write(getBytesWithNewline(QoSServiceProtocol.RESPONSE_ACCEPT_TOKEN));
-			message = reader.readLine();
-			TestServerConsole.log("GOT: " + message, 1, TestServerServiceEnum.TEST_SERVER);
+			try {
+				// with TLS the handshake takes place on this first write
+				out.write(getBytesWithNewline(QoSServiceProtocol.RESPONSE_GREETING));
+				out.write(getBytesWithNewline(QoSServiceProtocol.RESPONSE_ACCEPT_TOKEN));
+				message = LineReader.readLine(reader);
+			}
+			catch (IOException e) {
+				handshakeTimeout.cancel(false);
+				if (!socket.isClosed()) {
+					// TLS handshake failed (scanners, plain HTTP, ...), line too long or read timeout;
+					// a closed socket means the handshake timer fired (logged there)
+					TestServerConsole.log(name + " handshake failed: " + LineReader.sanitize(String.valueOf(e.getMessage())), 1, TestServerServiceEnum.TEST_SERVER);
+				}
+				return;
+			}
+			if (message == null) {
+				handshakeTimeout.cancel(false);
+				TestServerConsole.log(name + " connection closed before TOKEN", 1, TestServerServiceEnum.TEST_SERVER);
+				return;
+			}
+			TestServerConsole.log("GOT: " + LineReader.sanitize(message), 1, TestServerServiceEnum.TEST_SERVER);
 			
-			ClientToken token = checkToken(message);
+			ClientToken token;
+			try {
+				token = checkToken(message);
+			}
+			finally {
+				handshakeTimeout.cancel(false);
+			}
 			
 			TestServerConsole.log("TOKEN OK", 1, TestServerServiceEnum.TEST_SERVER);
+			socket.setSoTimeout(QoSServiceProtocol.TIMEOUT_CLIENTHANDLER_CONNECTION_MIN_VALUE);
 			
 			out.write(getBytesWithNewline(QoSServiceProtocol.RESPONSE_OK));
 			out.write(getBytesWithNewline(ACCEPT_COMMANDS_PROMPT));
@@ -189,8 +246,8 @@ public class ClientHandler implements Runnable {
 			
 			while(!quit) {
 				try {
-					command = reader.readLine();
-					TestServerConsole.log("COMMAND: " + command + " from: " + socket.getInetAddress().toString(), 0, TestServerServiceEnum.TEST_SERVER);
+					command = LineReader.readLine(reader);
+					TestServerConsole.log("COMMAND: " + LineReader.sanitize(command) + " from: " + socket.getInetAddress().toString(), 0, TestServerServiceEnum.TEST_SERVER);
 					if (command != null) {
 						if (command.startsWith(QoSServiceProtocol.CMD_NON_TRANSPARENT_PROXY_TEXT)) {
 							runNonTransparentProxyTest(command);
@@ -249,9 +306,14 @@ public class ClientHandler implements Runnable {
 						quit = true;
 					}
 				}
+				catch (SocketTimeoutException e) {
+					// the client keeps the connection open after its last test (no QUIT)
+					TestServerConsole.log(name + " idle timeout, closing connection", 1, TestServerServiceEnum.TEST_SERVER);
+					quit = true;
+				}
 				catch (Exception e) {
 					TestServerConsole.error("ClientHandler: " + socket.getInetAddress().toString() 
-							+ (command == null ? " [No command submitted]" : " [Command: " + command + "] - Exception catched and consumed."), 
+							+ (command == null ? " [No command submitted]" : " [Command: " + LineReader.sanitize(command) + "] - Exception catched and consumed."), 
 							e, 0, TestServerServiceEnum.TEST_SERVER);
 					throw e;
 				}
@@ -262,6 +324,7 @@ public class ClientHandler implements Runnable {
 		}
 		finally {
 			TestServer.getInstance().clientHandlerSet.remove(this);
+			TestServer.getInstance().releaseConnection(socket.getInetAddress());
 			if (socket != null && !socket.isClosed()) {
 				try {
 					socket.close();
@@ -312,7 +375,7 @@ public class ClientHandler implements Runnable {
 		ClientToken clientToken;
 		
 		try {
-			TestServerConsole.log("Got token: " + token, 0, TestServerServiceEnum.TEST_SERVER);
+			TestServerConsole.log("Got token: " + LineReader.sanitize(token), 0, TestServerServiceEnum.TEST_SERVER);
 			Matcher m = TOKEN_REGEX_PATTERN.matcher(token);
 
 			// Use the find() result, not groupCount() (which is the pattern's constant group count
@@ -364,12 +427,17 @@ public class ClientHandler implements Runnable {
 	 */
 	private void registerTcpCandidateChecked(final int port, final String command) throws Exception {
 		validateTestPort(port, command);
+		countTest(command);
+		TestServer.getInstance().registerTcpCandidate(port, socket);
+	}
+
+	/** Counts a test against the per-connection cap {@link #MAX_CANDIDATES_PER_CLIENT} (H1). */
+	private void countTest(final String command) throws IOException {
 		if (openCandidateCount.incrementAndGet() > MAX_CANDIDATES_PER_CLIENT) {
 			openCandidateCount.decrementAndGet();
-			throw new IOException("too many open test candidates for this client (max "
+			throw new IOException("too many tests for this client connection (max "
 					+ MAX_CANDIDATES_PER_CLIENT + "): " + command);
 		}
-		TestServer.getInstance().registerTcpCandidate(port, socket);
 	}
 
 	/** Throws if the client-supplied port is outside the allowed test-port range (H1/M3). */
@@ -538,6 +606,7 @@ public class ClientHandler implements Runnable {
 		numPackets = Integer.parseInt(m.group(2));
 		validateTestPort(port, command);
 		requireInRange(numPackets, MAX_UDP_PACKETS, "numPackets", command);  // bound UDP flood (H2)
+		countTest(command);
 		
 		//DatagramSocket sock = new DatagramSocket(port);
 		final UdpTestCandidate clientData = new UdpTestCandidate();
@@ -711,12 +780,15 @@ public class ClientHandler implements Runnable {
 		final int numPackets = Integer.parseInt(m.group(2));
 		validateTestPort(port, command);
 		requireInRange(numPackets, MAX_UDP_PACKETS, "numPackets", command);  // bound UDP flood (H2)
+		countTest(command);
 
 		TestServerConsole.log("Starting UDP OUT TEST (requested packets: " + numPackets + ") on port :" + port + " for " + socket.getInetAddress().toString(), 
 				1, TestServerServiceEnum.UDP_SERVICE);
 
 		final UdpTestCandidate udpData = new UdpTestCandidate();
 		udpData.setNumPackets(numPackets);
+		// keep the candidate for the duration of the test (otherwise the UDP watcher may remove it right away)
+		udpData.resetTtl(UdpTestCandidate.TTL);
 		
 		clientUdpOutDataMap.put(port, udpData);
 		
@@ -874,6 +946,17 @@ public class ClientHandler implements Runnable {
     	final int callDuration = Integer.parseInt(m.group(6));
     	requireInRange(callDuration, MAX_CALL_DURATION_MS, "callDuration", command);  // bound reflection duration (H3)
     	requireInRange(delay, MAX_PACKET_DELAY_MS, "delay", command);  // (H2)
+    	if (delay < MIN_PACKET_DELAY_MS) {
+    		throw new IOException("illegal delay " + delay + " (allowed " + MIN_PACKET_DELAY_MS + "-" + MAX_PACKET_DELAY_MS + "): " + command);
+    	}
+    	requireInRange(sampleRate, MAX_SAMPLE_RATE, "sampleRate", command);
+    	requireInRange(bps, MAX_BITS_PER_SAMPLE, "bitsPerSample", command);
+    	// payload size as calculated by RtpUtil.runVoipStream; the server allocates and sends one per packet
+    	final long rtpPayloadSize = (long) sampleRate / (1000 / delay) * (bps / 8);
+    	if (rtpPayloadSize > MAX_RTP_PAYLOAD) {
+    		throw new IOException("illegal RTP payload size " + rtpPayloadSize + " (max " + MAX_RTP_PAYLOAD + "): " + command);
+    	}
+    	countTest(command);
     	final long sequenceNumber = Integer.parseInt(m.group(7));
     	final int payloadTypeValue = Integer.parseInt(m.group(8));
 		final long buffer = 100 * 1000 * 1000;//// VoipTask.java#L101
@@ -887,6 +970,7 @@ public class ClientHandler implements Runnable {
 				+ ") on outgoing port :" + portOut + "/incoming port: " + portIn + " for " + socket.getInetAddress().toString(), 1, TestServerServiceEnum.UDP_SERVICE);
 		
 		final VoipTestCandidate voipData = new VoipTestCandidate(sequenceNumber, sampleRate, buffer);
+		voipData.resetTtl(callDuration + UdpTestCandidate.TTL);
 		
 		clientVoipDataMap.put(ssrc, voipData);
 				
@@ -963,9 +1047,7 @@ public class ClientHandler implements Runnable {
     protected void runRcvCommand(String command, ClientToken token, boolean isIncoming) throws IOException {
 		Pattern p = Pattern.compile((isIncoming ? QoSServiceProtocol.REQUEST_UDP_RESULT_IN : QoSServiceProtocol.REQUEST_UDP_RESULT_OUT) + " ([\\d]*)");
 		Matcher m = p.matcher(command);
-		m.find();
-
-		if (m.groupCount()!=1) {
+		if (!m.find()) {
 			throw new IOException("RCV command syntax error: " + command);
 		}
 		else {
@@ -999,9 +1081,7 @@ public class ClientHandler implements Runnable {
     protected void runVoipResultCommand(String command, ClientToken token) throws IOException {
 		Pattern p = Pattern.compile(QoSServiceProtocol.REQUEST_VOIP_RESULT + " ([\\d]*)");
 		Matcher m = p.matcher(command);
-		m.find();
-
-		if (m.groupCount()!=1) {
+		if (!m.find()) {
 			throw new IOException("GET VOIPRESULT command syntax error: " + command);
 		}
 		else {
@@ -1105,9 +1185,7 @@ public class ClientHandler implements Runnable {
     public void requestProtocolVersion(String command) throws IOException {
 		final Pattern p = Pattern.compile(QoSServiceProtocol.REQUEST_PROTOCOL_VERSION + " ([a-zA-Z0-9]*)");
 		final Matcher m = p.matcher(command);
-		m.find();
-
-		if (m.groupCount()!=1) {
+		if (!m.find()) {
 			throw new IOException("request protocol version command syntax error: " + command);
 		}
 		

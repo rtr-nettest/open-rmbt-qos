@@ -1,0 +1,68 @@
+# systemd unit for the RMBT QoS server.
+#
+# Install (see README, "Installation"):
+#   cp qos-server.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now qos-server
+#
+# Adjust User/Group and WorkingDirectory to your installation. The working directory holds
+# RMBTQoSServer.jar and config.properties; the server writes guard.properties there.
+
+[Unit]
+Description=RMBT QoS Server
+After=network-online.target
+Wants=network-online.target
+# if TLS is terminated by stunnel, start after it:
+# After=network-online.target stunnel.service
+
+[Service]
+Type=simple
+User=qos
+Group=qos
+WorkingDirectory=/opt/qos-server
+ExecStart=/usr/bin/java -jar RMBTQoSServer.jar
+
+# optional: send JSON logs to Logstash in addition to the journal
+#Environment=LOG_HOST=logstash.example.org
+#Environment=LOG_PORT=4560
+
+Restart=always
+RestartSec=5
+# optional periodic restart (here every 180 min)
+RuntimeMaxSec=180min
+TimeoutStopSec=60
+
+# the server logs to stdout/stderr -> journal (journalctl -u qos-server)
+StandardOutput=journal
+StandardError=journal
+
+# test ports below 1024 (TCP 21, 25, 80, ...; UDP 53, 123, ...) and the control port 443 need
+# CAP_NET_BIND_SERVICE; grant it to this service only instead of running as root
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+# one socket per UDP test port and connection
+LimitNOFILE=65536
+
+# hardening
+ProtectSystem=strict
+ReadWritePaths=/opt/qos-server
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

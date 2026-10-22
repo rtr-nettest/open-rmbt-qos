@@ -1,7 +1,6 @@
 # RMBT QoS Server
 
-The QoS (Quality of Service) test server for **Open-RMBT** (the engine behind RTR-Netztest). 
-**This code is outdated and not ready for production. Please use it as lab reference only.**
+The QoS (Quality of Service) test server for **Open-RMBT** (the engine behind RTR-Netztest).
 
 Main class: `at.rtr.rmbt.qos.testserver.TestServer`.
 
@@ -61,19 +60,19 @@ java -jar target/RMBTQoSServer.jar
 java -jar target/RMBTQoSServer.jar -p 5234 -u 10000 10050 -t 200
 ```
 
-> **Client-token verification is enabled by default.** Supply the same HMAC secret the Control Server
-> signs tokens with (`-k <secret>` / `server.secret`), or every client is rejected. For an isolated
-> lab where no secret is configured, disable verification with `-Dqos.checkToken=false`:
+> **Client-token verification is enabled by default.** Configure the keys the Control Server signs
+> tokens with (`server.secret`, `server.secret.<name>` or `-k <secret>`), or every client is rejected.
+> For testing only, verification can be disabled with `server.token.check=false` / `-ntc`:
 >
 > ```bash
-> # production: token verification on (default) — secret must match the Control Server
-> java -jar target/RMBTQoSServer.jar -k <shared-secret> -p 5233 -u 10100 10200
+> # token verification on (default) — keys must match the Control Server
+> java -jar target/RMBTQoSServer.jar -k <key1>,<key2> -p 5233 -u 10100 10200
 >
-> # isolated lab only: no authentication
-> java -Dqos.checkToken=false -jar target/RMBTQoSServer.jar -p 5233 -u 10100 10200
+> # testing only: no authentication
+> java -jar target/RMBTQoSServer.jar -ntc -p 5233 -u 10100 10200
 > ```
 >
-> See `open-rmbt-qos-private/security-enhancements.md` for the full security configuration.
+> See [Client tokens](#client-tokens) for the v1/v2 token formats.
 
 ### Version and releases
 
@@ -97,6 +96,71 @@ Requires **Java 17**. It compiles and runs on **JDK 17 through 25** (`maven.comp
 
 ---
 
+## Installation
+
+### Requirements
+
+| Purpose | Needed |
+|---|---|
+| **Run** the server | a **Java Runtime (JRE) 17 or newer** (tested with 25), e.g. `apt install openjdk-25-jre-headless` |
+| **Build** the server | a **JDK 17 or newer** and **Maven 3.6.3+**, e.g. `apt install openjdk-25-jdk-headless maven`, plus `git` (the version is derived from git tags) |
+
+Instead of building, the jar can be taken from a GitHub release (`RMBTQoSServer.jar`).
+
+### Network
+
+The server needs public IPv4 and/or IPv6 addresses that are reachable without NAT and without port
+filtering (a filtering firewall would distort the test results). Open/allow:
+
+- the **control port** (`server.port`, e.g. TCP `443`),
+- the **UDP test ports** (`server.udp.minport`–`server.udp.maxport`, `server.udp.ports`, `server.udp.nio.ports`),
+- the **TCP test ports** the QoS objectives use (e.g. 21, 22, 25, 53, 80, 110, 143, 465, 554, 585, 587, 993,
+  995, 5060, 6881, 9001) plus the random high ports of the non-transparent-proxy test, i.e. in practice all
+  TCP ports on the test addresses. No other service may listen on these ports on the test addresses
+  (e.g. bind `sshd` only to a management address, otherwise the port-22 test fails).
+
+### Setup
+
+```bash
+# 1. service user and directory
+useradd --system --home-dir /opt/qos-server --shell /usr/sbin/nologin qos
+mkdir -p /opt/qos-server
+
+# 2. jar (built with "mvn package" or downloaded from a release) and configuration
+cp target/RMBTQoSServer.jar config.properties /opt/qos-server/
+chown -R qos:qos /opt/qos-server          # the server writes guard.properties there
+chmod 600 /opt/qos-server/config.properties   # contains the token keys
+
+# 3. TLS certificate readable by the service user, e.g. via a group
+groupadd -f ssl-cert && usermod -aG ssl-cert qos
+chgrp -R ssl-cert /etc/letsencrypt/live /etc/letsencrypt/archive
+chmod -R g+rX /etc/letsencrypt/live /etc/letsencrypt/archive
+
+# 4. systemd unit (grants CAP_NET_BIND_SERVICE for ports < 1024, no root needed)
+cp qos-server.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now qos-server
+journalctl -u qos-server -f
+```
+
+Edit `/opt/qos-server/config.properties` before starting:
+
+1. `server.ip` — the public test addresses (IPv4 and IPv6, comma-separated),
+2. `server.port`, `server.ssl=true` and `server.ssl.certificate` / `server.ssl.key` (see [TLS](#tls)),
+3. `server.secret` / `server.secret.<name>` — the keys of **all measurement servers** the control server
+   assigns, as the client presents the token of its speed test (see [Client tokens](#client-tokens)),
+4. the UDP/TCP test ports (`server.udp.*`, `server.tcp.competence.sip`),
+5. `server.threads=200`, `server.connections.perip=50`.
+
+On startup the log shows the version, the settings and `Client token verification enabled ... with N key(s)`.
+A quick check from another host: `openssl s_client -connect <ip>:443` must show `QoSSP0.1` and
+`ACCEPT [TOKEN string]`; without a valid token the server closes the connection after 10 s.
+
+After a certificate renewal restart the service (`systemctl restart qos-server`, e.g. as a certbot
+deploy hook).
+
+---
+
 ## Configuration (`config.properties`)
 
 Settings are read by `ServerPreferences`. Precedence:
@@ -115,7 +179,8 @@ Settings are read by `ServerPreferences`. Precedence:
 | `server.ssl` | `true`/`false`. Wrap the control port in TLS (certificate source: see the next rows) (see [TLS](#tls)). |
 | `server.ssl.certificate` / `server.ssl.key` | PEM certificate chain (e.g. Let's Encrypt `fullchain.pem`) and unencrypted PKCS#8 PEM private key (`privkey.pem`). Takes precedence over a keystore. Restart the server after a certificate renewal. |
 | `server.ssl.keystore` / `server.ssl.keystore.password` / `server.ssl.keystore.type` | Alternatively a JKS or PKCS12 keystore file (type derived from the `.p12`/`.pfx` extension if not set). If neither PEM files nor a keystore are configured, the keystore is loaded from `/crt/qosserver.jks` inside the jar. |
-| `server.threads` | Size of the fixed worker thread pool ≈ max simultaneous clients. Minimum 5 (startup fails below that); a warning is printed at ≤ 10. |
+| `server.threads` | Size of the fixed worker thread pool = max simultaneous control connections. Minimum 5 (startup fails below that); a warning is printed at ≤ 10. Newer clients open one connection per test (~25 per test run), so use e.g. `200`. |
+| `server.connections.perip` | Max simultaneous control connections from one client IP (default `50`); further connections are closed right away. Keep it well below `server.threads` so a single host cannot occupy all workers. |
 | `server.ip.check` | `true`/`false`. If true, only client IPs registered during test setup receive responses (a per-IP candidate map is enforced). |
 | `server.udp.minport` / `server.udp.maxport` | Inclusive UDP port range opened for UDP tests. |
 | `server.udp.ports` | Additional explicit blocking UDP ports (comma list), e.g. `53,123,500,...`. |
@@ -206,41 +271,82 @@ e.g. 8723358c-2037-4029-a70c-91e5d9d35cf3_1700000000_oFAdP8+Cw9TqvJOgNc5ABOQRxss
 
 ## Logging
 
-Logging uses **SLF4J + Logback**, configured in
-[`src/main/resources/logback.xml`](src/main/resources/logback.xml) (bundled into the jar). To use an
-external configuration at runtime:
+Logging uses **SLF4J + Logback**. The configuration bundled in the jar
+([`src/main/resources/logback.xml`](src/main/resources/logback.xml)) logs everything at `INFO` to the
+console (stdout) — under systemd that ends up in the journal (`journalctl -u qos-server`).
 
-```bash
-java -Dlogback.configurationFile=/etc/qos/logback.xml -jar target/RMBTQoSServer.jar
+### Loggers
+
+| Logger | Content |
+|---|---|
+| `QOS.SERVER` | startup/settings, control connections, tokens, commands and answers |
+| `QOS.TCP` | TCP test ports (TCP/NTP/SIP tests) |
+| `QOS.UDP` | UDP and VoIP tests |
+| `QOS.DEBUG` | runtime guard |
+
+The bundled configuration logs at `INFO`; set a logger to `DEBUG`/`WARN` in your own configuration to get
+more/less detail.
+
+### Own configuration file
+
+To change levels or add appenders, put a Logback configuration next to the jar and pass it with
+`-Dlogback.configurationFile` — e.g. `/opt/qos-server/logback.xml`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true" scanPeriod="60 seconds">
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{ISO8601} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- daily rotated log file, kept for 30 days -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>/var/log/qos-server/qos.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>/var/log/qos-server/qos.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{ISO8601} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- less noise from the TCP test ports, more detail for UDP -->
+    <logger name="QOS.TCP" level="WARN"/>
+    <logger name="QOS.UDP" level="DEBUG"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>
 ```
 
-- By default everything logs to the **console** at `INFO`.
-- If the environment variable `LOG_HOST` is set, a `LogstashTcpSocketAppender` also sends JSON logs to
-  `LOG_HOST:LOG_PORT` (default port `4560`), tagged with `"app_name":"qos-service"`. If `LOG_HOST` is
-  unset, the server stays console-only.
-  ```bash
-  LOG_HOST=logs.example.com LOG_PORT=4560 java -jar target/RMBTQoSServer.jar
-  ```
-- The server logs under four named loggers — `QOS.SERVER`, `QOS.TCP`, `QOS.UDP`, `QOS.DEBUG` — whose
-  levels can be set individually:
-  ```xml
-  <logger name="QOS.UDP" level="DEBUG"/>
-  <logger name="QOS.TCP" level="WARN"/>
-  ```
-- A rolling file appender is added the standard Logback way:
-  ```xml
-  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-      <file>/var/log/qos/qos.log</file>
-      <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-          <fileNamePattern>/var/log/qos/qos.%d{yyyy-MM-dd}.log</fileNamePattern>
-      </rollingPolicy>
-      <encoder><pattern>%d{ISO8601} [%thread] %-5level %logger{36} - %msg%n</pattern></encoder>
-  </appender>
-  <root level="INFO">
-      <appender-ref ref="CONSOLE"/>
-      <appender-ref ref="FILE"/>
-  </root>
-  ```
+With `scan="true"` Logback re-reads the file at runtime, so log levels can be changed without a restart.
+In the systemd unit:
+
+```ini
+ExecStart=/usr/bin/java -Dlogback.configurationFile=/opt/qos-server/logback.xml -jar RMBTQoSServer.jar
+# the unit uses ProtectSystem=strict, so the log directory must be writable explicitly:
+ReadWritePaths=/opt/qos-server /var/log/qos-server
+LogsDirectory=qos-server
+```
+
+### Logstash
+
+If the environment variable `LOG_HOST` (or the system property of that name) is set, the server
+additionally sends JSON logs to Logstash at `LOG_HOST:LOG_PORT` (default port `4560`), tagged with
+`"app_name":"qos-service"`. This is done by the server itself, independently of the Logback
+configuration file, and logged at startup (`Sending logs to Logstash at ...`):
+
+```bash
+LOG_HOST=logstash.example.org LOG_PORT=4560 java -jar RMBTQoSServer.jar
+```
+
+In the systemd unit: `Environment=LOG_HOST=logstash.example.org`.
 
 ---
 
@@ -341,14 +447,43 @@ keytool -genkey -keyalg RSA -alias Qos -keystore qosserver.jks \
 
 ---
 
+## Security and limits
+
+The server is reachable from the internet and treats all client input as untrusted:
+
+- **Authentication:** every control connection must present a valid token (HMAC, age, and for v2 tokens
+  the client IP) within **10 s** after connecting, otherwise it is closed (absolute deadline, also for
+  clients that keep sending data). See [Client tokens](#client-tokens).
+- **Connections:** at most `server.connections.perip` (default 50) simultaneous control connections per
+  client IP; connections idle for 15 s (or the client-requested timeout, max 60 s) are closed.
+- **Input size:** protocol lines (control channel, TCP test ports, SIP headers) are limited to 4096
+  characters, SIP messages to 64 lines, requests on a TCP test port to 10 per connection.
+- **Test parameters** requested by an authenticated client are bounded: max 100 UDP packets per test,
+  VoIP call duration ≤ 30 s, packet delay 10–1000 ms, sample rate ≤ 96 kHz, ≤ 32 bits per sample,
+  RTP payload ≤ 1400 bytes, at most 64 tests per control connection.
+- **UDP:** packets are only processed for tests registered over an authenticated control connection;
+  unsolicited (or spoofed) packets are dropped without creating any state or log output. UDP/RTP
+  responses are only sent to the IP of the control connection (no reflection to third parties).
+- **Logs:** client-supplied strings are logged with control characters replaced (no log injection);
+  tokens' HMACs are never echoed to the client.
+- **Operation:** run as an unprivileged user with `CAP_NET_BIND_SERVICE` only (see `qos-server.service`),
+  keep the token keys in a `chmod 600` config file.
+
+The limits are constants in `ClientHandler`, `TcpClientHandler`, `SipCompetence` and `LineReader`.
+
+---
+
 ## Repository layout
 
 - `src/main/java` — server sources, including the `at.rtr.rmbt.util.*` and `at.rtr.rmbt.shared.*`
   helper classes the server depends on.
 - `src/main/resources/logback.xml` — logging configuration.
-- `src/test/java` — JUnit 5 + Mockito tests.
+- `src/test/java` — JUnit 6 + Mockito tests.
 - `legacy-tests/` — JUnit 4 + JMockit tests, excluded from the build (see `legacy-tests/README.md`).
 - `config.properties` — server configuration.
+- `qos-server.service` — systemd unit (see [Installation](#installation)).
+- `qos_server.sh` — legacy SysV init script (superseded by the systemd unit).
+- `.github/workflows/build.yml` — build/test on every push, GitHub release on tags.
 - `PROTOCOL.md` — the client/server wire protocol.
 - `LICENSE` — Apache License 2.0.
 

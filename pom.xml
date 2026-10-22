@@ -17,21 +17,19 @@
         <maven.compiler.release>17</maven.compiler.release>
         <main.class>at.rtr.rmbt.qos.testserver.TestServer</main.class>
 
-        <!-- restlet kept at 2.4.3: 3.0-M1 is a pre-release milestone -->
-        <restlet.version>2.4.3</restlet.version>
-        <!-- slf4j kept at 2.0.16: 2.1.0-alpha1 is a pre-release -->
-        <slf4j.version>2.0.16</slf4j.version>
-        <logback.version>1.5.33</logback.version>
+        <!-- restlet kept on 2.4.x: 2.5-M1 / 3.0-M1 are pre-release milestones -->
+        <restlet.version>2.4.4</restlet.version>
+        <!-- slf4j kept on 2.0.x: 2.1.0-alpha1 is a pre-release -->
+        <slf4j.version>2.0.20</slf4j.version>
+        <logback.version>1.6.5</logback.version>
         <logstash.encoder.version>9.0</logstash.encoder.version>
-        <janino.version>3.1.12</janino.version>
-        <json.version>20260522</json.version>
+        <jackson.version>3.2.4</jackson.version>
+        <json.version>20260814</json.version>
         <gson.version>2.14.0</gson.version>
-        <guava.version>33.6.0-jre</guava.version>
-        <postgresql.version>42.7.11</postgresql.version>
+        <guava.version>33.7.2-jre</guava.version>
         <dnsjava.version>3.6.5</dnsjava.version>
-        <!-- junit kept on 5.x: 6.x is a major bump with Mockito-JUnit5 compatibility risk -->
-        <junit.version>5.11.4</junit.version>
-        <mockito.version>5.23.0</mockito.version>
+        <junit.version>6.1.3</junit.version>
+        <mockito.version>5.24.0</mockito.version>
     </properties>
 
     <repositories>
@@ -41,6 +39,20 @@
             <url>https://maven.restlet.talend.com</url>
         </repository>
     </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Jackson 3 comes in transitively via logstash-logback-encoder (9.0 pulls 3.0.1, which has
+                 known vulnerabilities); pin the whole Jackson family to a current release. -->
+            <dependency>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- REST framework -->
@@ -66,12 +78,6 @@
             <artifactId>logstash-logback-encoder</artifactId>
             <version>${logstash.encoder.version}</version>
         </dependency>
-        <!-- Required for <if>/<then> conditionals in logback.xml -->
-        <dependency>
-            <groupId>org.codehaus.janino</groupId>
-            <artifactId>janino</artifactId>
-            <version>${janino.version}</version>
-        </dependency>
 
         <!-- JSON -->
         <dependency>
@@ -90,13 +96,6 @@
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
-        </dependency>
-
-        <!-- PostgreSQL JDBC -->
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <version>${postgresql.version}</version>
         </dependency>
 
         <!-- DNS lookups (Helperfunctions) -->
@@ -133,14 +132,14 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.15.0</version>
+                <version>3.16.0</version>
             </plugin>
 
             <!-- Version from git (same schema as open-rmbt-client-cli): written to version.properties -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>3.2.0</version>
                 <executions>
                     <execution>
                         <id>git-version</id>
@@ -210,7 +209,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.5.6</version>
+                <version>3.6.0</version>
                 <configuration>
                     <!-- Load Mockito as a Java agent (inline mock maker) instead of self-attaching,
                          which is required on current/future JDKs (17 through 25). -->

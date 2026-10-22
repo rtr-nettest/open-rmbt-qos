@@ -17,6 +17,7 @@
 package at.rtr.rmbt.qos.testserver;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
@@ -74,7 +75,21 @@ public class QoSService implements Runnable {
 	
 					Socket client = getSocket();
 					if (client != null) {
-						executor.execute(new ClientHandler(socket, client));
+						final InetAddress clientAddr = client.getInetAddress();
+						if (!TestServer.getInstance().acquireConnection(clientAddr)) {
+							TestServerConsole.log(name + "too many connections from " + clientAddr + " (max " 
+									+ TestServer.getInstance().serverPreferences.getMaxConnectionsPerIp() + "), connection refused", 0, TestServerServiceEnum.TEST_SERVER);
+							client.close();
+							continue;
+						}
+						try {
+							executor.execute(new ClientHandler(socket, client));
+						}
+						catch (Exception e) {
+							TestServer.getInstance().releaseConnection(clientAddr);
+							client.close();
+							throw e;
+						}
 					}
 				}
 				catch (Exception e) {

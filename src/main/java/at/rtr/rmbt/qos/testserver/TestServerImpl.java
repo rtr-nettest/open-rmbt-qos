@@ -298,6 +298,14 @@ public class TestServerImpl {
 	    	TestServerConsole.log("WARNING: client token verification is DISABLED - every client is accepted without authentication!", 
 	    			-1, TestServerServiceEnum.TEST_SERVER);
 	    }
+	    else if (serverPreferences.getSecretKeys().isEmpty()) {
+	    	TestServerConsole.log("WARNING: client token verification is enabled but no key is configured ('" + ServerPreferences.PARAM_SERVER_SECRET_KEY 
+	    			+ "') - every client will be rejected!", -1, TestServerServiceEnum.TEST_SERVER);
+	    }
+	    else {
+	    	TestServerConsole.log("Client token verification enabled with " + serverPreferences.getSecretKeys().size() + " key(s).", 
+	    			-1, TestServerServiceEnum.TEST_SERVER);
+	    }
 	    
 		console.start();
 	    

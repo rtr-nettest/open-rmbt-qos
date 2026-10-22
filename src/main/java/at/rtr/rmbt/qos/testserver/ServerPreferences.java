@@ -22,9 +22,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -155,7 +158,8 @@ public class ServerPreferences {
 	private String sslCertificate = null;
 	private String sslKey = null;
 	private int verboseLevel = 0;
-	private String secretKey = null;
+	/** keys used to verify client tokens; a token is valid if it was signed with any of them */
+	private final List<String> secretKeys = new ArrayList<>();
 	private boolean isIpCheck = false;
 	private boolean isTokenCheck = true;
 	private boolean isLoggingEnabled = true;
@@ -238,7 +242,7 @@ public class ServerPreferences {
 		    		loadFromConfigFile(args[++i]);
 		    	}
 		    	else if (arg.equals(ARG_SECRET_KEY)) {
-		    		secretKey = args[++i];
+		    		addSecretKeys(args[++i]);
 		    	}
 		    	else if (arg.equals(ARG_NO_TOKEN_CHECK)) {
 		    		isTokenCheck = false;
@@ -387,7 +391,14 @@ public class ServerPreferences {
 	   		
 	   		param = prop.getProperty(PARAM_SERVER_SECRET_KEY);
 	   		if (param!=null) {
-		   		secretKey = param.trim();
+		   		addSecretKeys(param);
+	   		}
+	   		
+	   		//additional named keys: server.secret.<name>=<key>
+	   		for (String name : new TreeSet<>(prop.stringPropertyNames())) {
+	   			if (name.startsWith(PARAM_SERVER_SECRET_KEY + ".")) {
+	   				addSecretKeys(prop.getProperty(name));
+	   			}
 	   		}
 
 	   		param = prop.getProperty(PARAM_SERVER_TOKEN_CHECK);
@@ -594,18 +605,43 @@ public class ServerPreferences {
 	
 	/**
 	 * 
-	 * @return
+	 * @return the first configured secret key or null
 	 */
 	public String getSecretKey() {
-		return secretKey;
+		return secretKeys.isEmpty() ? null : secretKeys.get(0);
 	}
 	
 	/**
 	 * 
-	 * @param secretKey
+	 * @return all keys a client token may be signed with
+	 */
+	public List<String> getSecretKeys() {
+		return Collections.unmodifiableList(secretKeys);
+	}
+	
+	/**
+	 * replaces all configured keys
+	 * @param secretKey a single key or a comma separated list of keys
 	 */
 	public void setSecretKey(String secretKey) {
-		this.secretKey = secretKey;
+		secretKeys.clear();
+		addSecretKeys(secretKey);
+	}
+	
+	/**
+	 * adds one key or a comma separated list of keys (duplicates and empty entries are ignored)
+	 * @param keys
+	 */
+	public void addSecretKeys(String keys) {
+		if (keys == null) {
+			return;
+		}
+		for (String key : keys.split(",")) {
+			key = key.trim();
+			if (!key.isEmpty() && !secretKeys.contains(key)) {
+				secretKeys.add(key);
+			}
+		}
 	}
 	
 	/**
@@ -721,7 +757,7 @@ public class ServerPreferences {
 		System.out.println("-p [port_number] => initializes the server on this port number (default: 5234).");
 		System.out.println("-u [min_port_number] [max_port_number] => supported udp port range by this server: from min_port_number to max_port_number (both inclusive).");
 		System.out.println("-t [max_threads] => The max number of threads (clients) this server can handle at the same time (default: 100).");
-		System.out.println("-k [secret_key] => The secret key used for client-server communication.");
+		System.out.println("-k [secret_key] => A secret key used to verify client tokens (may be repeated or a comma separated list).");
 		System.out.println("-ntc => do not verify client tokens (INSECURE, lab/testing only; config: server.token.check=false).");
 		System.out.println("\nExample: -p 5234 -u 10000 20000 => makes the server listen on port 5234 for incoming test requests and let it accept udp test connections on ports 10000 to 20000 (inclusive).");
 		System.out.println("\nIf no parameter is set then the default config file config.properties is being used. If this file isn't found, the default values are being used.");
@@ -853,7 +889,7 @@ public class ServerPreferences {
 				+ useSsl + ", sslKeystore=" + (sslCertificate != null ? sslCertificate + " + " + sslKey 
 						: sslKeystore != null ? sslKeystore : "classpath:" + TestServer.QOS_KEY_FILE)
 				+ ", verboseLevel=" + verboseLevel + ", secretKey="
-				+ (secretKey != null ? "***" : null) + ", isTokenCheck=" + isTokenCheck + ", isIpCheck=" + isIpCheck
+				+ "[" + secretKeys.size() + " key(s)]" + ", isTokenCheck=" + isTokenCheck + ", isIpCheck=" + isIpCheck
 				+ ", isLoggingEnabled=" + isLoggingEnabled
 				+ ", loggingPattern=" + loggingPattern + ", isSyslogEnabled="
 				+ isSyslogEnabled + ", syslogHost=" + syslogHost

@@ -105,7 +105,7 @@ Settings are read by `ServerPreferences`. Precedence:
 | `server.udp.ports` | Additional explicit blocking UDP ports (comma list), e.g. `53,123,500,...`. |
 | `server.udp.nio.ports` | Non-blocking (NIO) UDP ports (comma list). Required for VoIP tests (bidirectional streams). A port may not appear in both the blocking and NIO sets. |
 | `server.tcp.competence.sip` | TCP ports (comma list) that additionally speak the SIP test protocol, e.g. `5060`. |
-| `server.secret` | HMAC secret for client-token verification. **Required by default**: verification is enabled (`ClientHandler.isTokenCheckEnabled()`, default `true`), so this must equal the Control Server's token-signing key or all clients are rejected. Disable for isolated lab use with `-Dqos.checkToken=false`. |
+| `server.secret` | HMAC key(s) for client-token verification; a comma-separated list is allowed. Additional keys can be given as `server.secret.<name>=<key>` (e.g. one per measurement server, since the control server signs each test token with the key of the measurement server it assigned). A token is accepted if it was signed with **any** configured key. Verification is on by default (`server.token.check`). |
 | `server.token.check` | `true` (default) / `false`. `false` accepts every client token without verifying the HMAC or its age (lab/testing only). Same as the `-ntc` argument; `-Dqos.checkToken=true/false` overrides both. A warning is logged at startup when verification is off. |
 | `server.verbose` | `0`/`1`/`2`. Does not control log output (Logback log levels do); it affects the interactive console and a few explicit `verbose >= 1` code paths. |
 
@@ -152,7 +152,7 @@ not loaded automatically (use `-f` to load one).
 | `-ic` | Enable the client IP check (`server.ip.check`). |
 | `-s` | Enable TLS on the control port. |
 | `-ntc` | Disable client-token verification (`server.token.check=false`). Insecure, lab/testing only. |
-| `-k <secret>` | HMAC secret key — required by default for token verification (see the `server.secret` note above). |
+| `-k <secret>` | HMAC secret key(s); may be repeated or a comma-separated list — required by default for token verification (see the `server.secret` note above). |
 | `-v` / `-vv` | Verbose level 1 / 2. |
 | `-l <file>` | Set the main log file. No effect (logging is controlled by `logback.xml`). |
 | `-h` | Print help and exit. |

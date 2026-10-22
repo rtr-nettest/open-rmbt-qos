@@ -191,6 +191,11 @@ public class ClientHandlerTest {
 			final ClientHandler ch = new ClientHandler(serverSocket, socket);
 			assertNotNull(ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("secret", data) + "\n"));
 			assertThrows(IOException.class, () -> ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("other", data) + "\n"));
+			// a token signed with any of the configured keys is accepted
+			sp.setSecretKey("first, second,third");
+			assertNotNull(ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("third", data) + "\n"));
+			assertThrows(IOException.class, () -> ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("fourth", data) + "\n"));
+			sp.setSecretKey("secret");
 			// newer clients append further fields after the HMAC
 			assertNotNull(ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("secret", data) + "_#v2#ato5KX0xLOYfJswZcjbThw==\n"));
 		}

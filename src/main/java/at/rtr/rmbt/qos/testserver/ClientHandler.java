@@ -32,7 +32,10 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -320,11 +323,11 @@ public class ClientHandler implements Runnable {
 				String hmac = m.group(3);
 
 				if (isTokenCheckEnabled()) {
-					String controlHmac = Helperfunctions.calculateHMAC(TestServer.getInstance().serverPreferences.getSecretKey(), uuid + "_" + timeStamp);
+					final boolean isHmacValid = isHmacValid(uuid + "_" + timeStamp, hmac, TestServer.getInstance().serverPreferences.getSecretKeys());
 					// The control server issues the test slot as epoch seconds (rmbt_get_next_test_slot);
 					// accept millisecond timestamps as well.
 					final long timeStampMs = timeStamp < 100_000_000_000L ? timeStamp * 1000 : timeStamp;
-					if (controlHmac.equals(hmac) && (timeStampMs + QoSServiceProtocol.TOKEN_LEGAL_TIME >= System.currentTimeMillis())) {
+					if (isHmacValid && (timeStampMs + QoSServiceProtocol.TOKEN_LEGAL_TIME >= System.currentTimeMillis())) {
 						clientToken = new ClientToken(uuid, timeStamp, hmac);
 						return clientToken;
 					}
@@ -347,6 +350,19 @@ public class ClientHandler implements Runnable {
 			// Do not echo the raw token back to the client. (Security review L3.)
 			throw new IOException("BAD TOKEN");
 		}
+	}
+
+	/**
+	 * @return true if <code>hmac</code> is the HMAC of <code>data</code> for any of the given keys
+	 */
+	protected static boolean isHmacValid(final String data, final String hmac, final List<String> keys) {
+		final byte[] hmacBytes = hmac.getBytes(StandardCharsets.US_ASCII);
+		boolean isValid = false;
+		for (String key : keys) {
+			// constant time comparison; check all keys to not leak which one matched
+			isValid |= MessageDigest.isEqual(Helperfunctions.calculateHMAC(key, data).getBytes(StandardCharsets.US_ASCII), hmacBytes);
+		}
+		return isValid;
 	}
 
 	/**

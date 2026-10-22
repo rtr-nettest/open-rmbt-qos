@@ -115,6 +115,19 @@ public class ServerPreferencesTest {
 	}
 
 	@Test
+	public void loadPreferencesWithMultipleSecretKeys() throws TestServerException {
+		final String config = "server.secret=key1, key2,,\n"
+				+ "server.secret.measurement2=key3\n"
+				+ "server.secret.measurement1=key1\n";
+		ServerPreferences sp = new ServerPreferences(new java.io.ByteArrayInputStream(config.getBytes()));
+		assertEquals(java.util.List.of("key1", "key2", "key3"), sp.getSecretKeys(), "Secret keys");
+		assertEquals("key1", sp.getSecretKey(), "First secret key");
+		
+		sp = new ServerPreferences(new String[] {"-k", "a,b", "-k", "c"});
+		assertEquals(java.util.List.of("a", "b", "c"), sp.getSecretKeys(), "Secret keys from arguments");
+	}
+
+	@Test
 	public void loadPreferencesWithDifferentUdpPortsIncludingNio() throws TestServerException {
 		ServerPreferences sp = new ServerPreferences(getClass().getResourceAsStream("config_udp.properties"));
 		assertNotNull(sp, "ServerPreferences != null");

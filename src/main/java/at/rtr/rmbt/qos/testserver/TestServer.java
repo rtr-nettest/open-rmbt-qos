@@ -132,7 +132,34 @@ public class TestServer {
 	 * @param args
 	 * @throws Exception 
 	 */
-	public static void main(String[] args) throws Exception {
-		getInstance().run(args);
+	public static void main(String[] args) {
+		System.out.println("RMBT QoS Server " + VERSION_REVISION);
+		try {
+			getInstance().run(args);
+		}
+		catch (TestServerException e) {
+			// configuration/startup problem: one clear line, no stack trace
+			System.err.println("FATAL: " + describe(e));
+			System.exit(1);
+		}
+		catch (Exception e) {
+			System.err.println("FATAL: unexpected error during startup: " + describe(e));
+			e.printStackTrace();
+			System.exit(1);
+		}
+	}
+	
+	/**
+	 * @return the messages of the exception and its causes, e.g. "cannot load keystore: /x.pem (No such file or directory)"
+	 */
+	private static String describe(final Throwable t) {
+		final StringBuilder sb = new StringBuilder();
+		for (Throwable c = t; c != null; c = c.getCause()) {
+			final String msg = c.getMessage() != null ? c.getMessage() : c.getClass().getSimpleName();
+			if (sb.indexOf(msg) < 0) {
+				sb.append(sb.length() > 0 ? ": " : "").append(msg);
+			}
+		}
+		return sb.toString();
 	}
 }

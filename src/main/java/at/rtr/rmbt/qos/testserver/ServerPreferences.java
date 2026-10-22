@@ -268,19 +268,26 @@ public class ServerPreferences {
 		    	}
 		    	else if (arg.equals(ARG_HELP)) {
 		    		writeErrorString();
+		    		System.exit(0);
 		    	}
 		    	else if (arg.equals(ARG_LOG)) {
 	    			logFileMap.put(TestServerServiceEnum.TEST_SERVER, args[++i]);
 		    	}
 		    	else {
-		    		throw new TestServerException("UNKNOWN PARAMETER: " + arg, null);
+		    		throw new TestServerException("unknown argument: " + args[i] + " (-h for help)", null);
 		    	}
 		    }
 		    
 		    setUdpPortSet();
 		}
+		catch (TestServerException e) {
+			throw e;
+		}
+		catch (ArrayIndexOutOfBoundsException e) {
+			throw new TestServerException("missing value for the last argument (-h for help)", null);
+		}
 		catch (Exception e) {
-			throw new TestServerException("TEST SERVER EXCEPTION", e);
+			throw new TestServerException("invalid arguments: " + e.getMessage() + " (-h for help)", e);
 		}
 		
 	    checkConstraints();
@@ -313,11 +320,20 @@ public class ServerPreferences {
 			}
 		}
 		catch (final IOException ex) {
-	   		ex.printStackTrace();
-			throw new TestServerException("TEST SERVER EXCEPTION", ex);	
+			throw new TestServerException("cannot read config file '" + fileName + "': " + ex.getMessage(), ex);	
+		}
+		
+		if (is == null) {
+			throw new TestServerException("config file '" + fileName + "' not found in " + new File("").getAbsolutePath()
+					+ " - create it (see config.properties in the repository) or start with arguments (-h for help)", null);
 		}
 
-		loadFromConfigFile(is);
+		try (InputStream in = is) {
+			loadFromConfigFile(in);
+		}
+		catch (final IOException ex) {
+			throw new TestServerException("cannot read config file '" + fileName + "': " + ex.getMessage(), ex);
+		}
 	}
 
 	/**
@@ -337,11 +353,17 @@ public class ServerPreferences {
 
 	   		param = prop.getProperty(PARAM_SERVER_IP);
 	   		if (param!=null) {
-	   			Pattern p = Pattern.compile(REGEX_IP_LIST);
-	   			Matcher m = p.matcher(param);
-   				while (m.find()) {
-   		   			inetAddrBindToSet.add(InetAddress.getByName(m.group(1)));
-   				}
+	   			for (String ip : param.split(",")) {
+	   				ip = ip.trim();
+	   				if (ip.isEmpty()) {
+	   					continue;
+	   				}
+	   				// IP addresses only (no host names), IPv6 optionally in brackets
+	   				if (!ip.matches("\\[?[0-9a-fA-F.:]+\\]?")) {
+	   					throw new TestServerException("invalid IP address in " + PARAM_SERVER_IP + ": '" + ip + "' (IP addresses only, comma-separated)", null);
+	   				}
+	   				inetAddrBindToSet.add(InetAddress.getByName(ip.replace("[", "").replace("]", "")));
+	   			}
 	   		}
 	   		
 	   		param = prop.getProperty(PARAM_SERVER_TCP_IP_CHECK);
@@ -521,9 +543,15 @@ public class ServerPreferences {
 	   		
 	   		pluginMap.put("REST", new RestService(prop, this));
 
-	   	} catch (IOException ex) {
-	   		ex.printStackTrace();
-			throw new TestServerException("TEST SERVER EXCEPTION", ex);
+	   	}
+	   	catch (NumberFormatException ex) {
+	   		throw new TestServerException("invalid number in the config file (" + ex.getMessage() + ")", null);
+	   	}
+	   	catch (java.net.UnknownHostException ex) {
+	   		throw new TestServerException("invalid IP address in the config file (" + ex.getMessage() + ")", null);
+	   	}
+	   	catch (IOException ex) {
+			throw new TestServerException("cannot read the config file: " + ex.getMessage(), ex);
 	   	}
 	}
 	
@@ -777,8 +805,6 @@ public class ServerPreferences {
 	 * 
 	 */
 	public static void writeErrorString() {
-		System.out.println("---------------------------------------------");
-		System.out.println("Error initializing QoS TestServer " + TestServer.VERSION_REVISION + "\n");
 		System.out.println("Supported parameters:");
 		System.out.println("-h => shows this help.");
 		System.out.println("-s => ssl connection.");
@@ -794,7 +820,8 @@ public class ServerPreferences {
 		System.out.println("-v2only => accept only v2 tokens (bound to the client IP), reject legacy v1 tokens (config: server.token.v2only=true).");
 		System.out.println("-ntc => do not verify client tokens (INSECURE, lab/testing only; config: server.token.check=false).");
 		System.out.println("\nExample: -p 5234 -u 10000 20000 => makes the server listen on port 5234 for incoming test requests and let it accept udp test connections on ports 10000 to 20000 (inclusive).");
-		System.out.println("\nIf no parameter is set then the default config file config.properties is being used. If this file isn't found, the default values are being used.");
+		System.out.println("\nWithout parameters the server reads config.properties from the working directory (it must exist).");
+		System.out.println("With parameters only the parameters are used, plus a config file given with -f.");
 		System.out.println("---------------------------------------------");
 	}
 

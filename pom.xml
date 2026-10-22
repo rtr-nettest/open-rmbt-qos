@@ -245,6 +245,16 @@
                                         implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
                             <filters>
+                                <!-- dnsjava registers itself as the JVM-wide DNS resolver; its provider class is a
+                                     Java 18+ multi-release class that is lost in the shaded jar, which broke every
+                                     hostname lookup (e.g. LOG_HOST). The server only uses the dnsjava API directly. -->
+                                <filter>
+                                    <artifact>dnsjava:dnsjava</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/services/java.net.spi.InetAddressResolverProvider</exclude>
+                                        <exclude>META-INF/services/sun.net.spi.nameservice.NameServiceDescriptor</exclude>
+                                    </excludes>
+                                </filter>
                                 <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>

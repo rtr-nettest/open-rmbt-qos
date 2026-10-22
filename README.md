@@ -51,7 +51,7 @@ Run only the unit tests: `mvn test`; start from scratch: `mvn clean package`.
 Run the server:
 
 ```bash
-# Uses ./config.properties if present, otherwise command-line args
+# Without arguments ./config.properties is required
 java -jar target/RMBTQoSServer.jar
 
 # Or with command-line options (see below)
@@ -167,6 +167,11 @@ Settings are read by `ServerPreferences`. Precedence:
   back to the classpath).
 - **Any command-line arguments are present** → `config.properties` is not loaded automatically; only
   the arguments apply, unless you explicitly pass `-f config.properties`.
+
+On startup the server prints its version. Configuration and startup problems (missing or invalid config
+file, unknown arguments, missing token keys, unreadable certificate, port in use, …) are reported as a
+single `FATAL: …` line and the process exits with code `1` (so systemd and scripts notice the failure);
+`-h` prints the help and exits with `0`.
 
 ### Networking and test parameters
 

@@ -116,6 +116,26 @@ public class ServerPreferencesTest {
 	}
 
 	@Test
+	public void configErrorsAreReportedAsTestServerException() {
+		// clear messages instead of NullPointerException / NumberFormatException
+		final TestServerException missing = assertThrows(TestServerException.class,
+				() -> new ServerPreferences(new String[] {"-f", "/nonexistent/qos-config.properties"}));
+		assertTrue(missing.getMessage().contains("not found"), missing.getMessage());
+		assertThrows(TestServerException.class, () -> new ServerPreferences(new java.io.ByteArrayInputStream("server.port=abc\n".getBytes())));
+		final TestServerException ip = assertThrows(TestServerException.class,
+				() -> new ServerPreferences(new java.io.ByteArrayInputStream("server.ip=localhost\n".getBytes())));
+		assertTrue(ip.getMessage().contains("'localhost'"), ip.getMessage());
+		assertThrows(TestServerException.class, () -> new ServerPreferences(new String[] {"-x"}));
+		assertThrows(TestServerException.class, () -> new ServerPreferences(new String[] {"-p"}));
+	}
+
+	@Test
+	public void ipListAcceptsSpacesAndIpv6() throws Exception {
+		final ServerPreferences sp = new ServerPreferences(new java.io.ByteArrayInputStream("server.ip=192.0.2.1, [2001:db8::1]\n".getBytes()));
+		assertEquals(2, sp.getInetAddrBindToSet().size());
+	}
+
+	@Test
 	public void loadPreferencesWithMultipleSecretKeys() throws TestServerException {
 		final String config = "server.secret=key1, key2,,\n"
 				+ "server.secret.measurement2=key3\n"

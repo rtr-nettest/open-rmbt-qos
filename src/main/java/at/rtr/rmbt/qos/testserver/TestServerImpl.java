@@ -214,20 +214,8 @@ public class TestServerImpl {
 	}
 
 	public void run(final String[] args ) throws Exception {
-		ServerPreferences sp = null;
-		try {
-			if (args.length>0) {
-				sp = new ServerPreferences(args);
-			}
-			else {
-				sp = new ServerPreferences();
-			}
-		} catch (TestServerException e) {
-			ServerPreferences.writeErrorString();
-			e.printStackTrace();
-			System.exit(0);
-		}
-		
+		// errors are reported by TestServer.main()
+		final ServerPreferences sp = args.length > 0 ? new ServerPreferences(args) : new ServerPreferences();
 		run(sp);
 	}
 	
@@ -328,8 +316,8 @@ public class TestServerImpl {
 	    			-1, TestServerServiceEnum.TEST_SERVER);
 	    }
 	    else if (serverPreferences.getSecretKeys().isEmpty()) {
-	    	TestServerConsole.log("WARNING: client token verification is enabled but no key is configured ('" + ServerPreferences.PARAM_SERVER_SECRET_KEY 
-	    			+ "') - every client will be rejected!", -1, TestServerServiceEnum.TEST_SERVER);
+	    	throw new TestServerException("client token verification is enabled but no key is configured (set '" + ServerPreferences.PARAM_SERVER_SECRET_KEY 
+	    			+ "' / -k, or '" + ServerPreferences.PARAM_SERVER_TOKEN_CHECK + "=false' / -ntc for testing only)", null);
 	    }
 	    else {
 	    	TestServerConsole.log("Client token verification enabled (" + (serverPreferences.isTokenV2Only() ? "v2 tokens only" : "v1 and v2 tokens") 
@@ -356,7 +344,16 @@ public class TestServerImpl {
 	            KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
 	            
 	            // Load the key chain
-	            KeyStore ks = loadKeyStore(serverPreferences);
+	            final KeyStore ks;
+	            try {
+	            	ks = loadKeyStore(serverPreferences);
+	            }
+	            catch (TestServerException e) {
+	            	throw e;
+	            }
+	            catch (Exception e) {
+	            	throw new TestServerException("cannot load the TLS certificate/keystore", e);
+	            }
 	            kmf.init(ks, serverPreferences.getSslKeystorePassword().toCharArray());
 			    final SSLContext sslContext = SSLContext.getInstance("TLS");
 	            // Initialize the SSL context
@@ -377,7 +374,12 @@ public class TestServerImpl {
 				}
 			
 				serverSocket.setReuseAddress(true);
-				serverSocket.bind(new InetSocketAddress(addr, serverPreferences.getServerPort()));
+				try {
+					serverSocket.bind(new InetSocketAddress(addr, serverPreferences.getServerPort()));
+				}
+				catch (IOException e) {
+					throw new TestServerException("cannot bind the control port " + addr.getHostAddress() + ":" + serverPreferences.getServerPort(), e);
+				}
 				serverSocketList.add(serverSocket);
 				
 				this.qosService = new QoSService(mainServerPool, serverSocket, null);
@@ -441,11 +443,11 @@ public class TestServerImpl {
 		    			}
 		    		});
 		} 
-	    catch (IOException e) {
-			e.printStackTrace();
-		}
+	    catch (TestServerException e) {
+	    	throw e;  // reported by TestServer.main()
+	    }
 	    catch (Exception e) {
-	    	e.printStackTrace();
+	    	throw new TestServerException("cannot start the server", e);
 	    }
 	}
 	

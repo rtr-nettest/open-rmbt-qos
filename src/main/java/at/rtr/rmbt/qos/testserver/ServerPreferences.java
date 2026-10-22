@@ -770,7 +770,7 @@ public class ServerPreferences {
 	 */
 	public static void writeErrorString() {
 		System.out.println("---------------------------------------------");
-		System.out.println("Error initializing QoS TestServer\n");
+		System.out.println("Error initializing QoS TestServer " + TestServer.VERSION_REVISION + "\n");
 		System.out.println("Supported parameters:");
 		System.out.println("-h => shows this help.");
 		System.out.println("-s => ssl connection.");

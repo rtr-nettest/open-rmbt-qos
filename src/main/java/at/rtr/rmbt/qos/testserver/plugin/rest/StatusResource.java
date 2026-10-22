@@ -40,6 +40,7 @@ public class StatusResource extends ServerResource {
 
 		json.put("starttime", TestServer.getInstance().serverPreferences.getStartTimestamp());
 		json.put("version", TestServer.TEST_SERVER_VERSION_MAJOR + "." + TestServer.TEST_SERVER_VERSION_MINOR + "." + TestServer.TEST_SERVER_VERSION_PATCH);
+		json.put("build", TestServer.VERSION_FULL);
 		
 		if (TestServerConsole.errorReportMap.size() > 0) {
 			setStatus(Status.SERVER_ERROR_INTERNAL);

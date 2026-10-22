@@ -16,6 +16,7 @@
  ******************************************************************************/
 package at.rtr.rmbt.qos.testserver;
 
+import java.io.InputStream;
 import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.NoSuchAlgorithmException;
@@ -23,6 +24,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
+import java.util.Properties;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -71,6 +73,30 @@ public class TestServer {
 	 * </ul>
 	 */
 	public final static String TEST_SERVER_CODENAME = "DROPPED PACKET";
+	
+	/**
+	 * build version from git: full describe with commit hash, e.g. "v2.0.0-4-ged32b3d" ("v2.0.0" on the tag)
+	 */
+	public final static String VERSION_FULL = loadVersionProp("version.full");
+	
+	/**
+	 * build version from git plus branch, e.g. "v2.0.0-4-ged32b3d-master"
+	 */
+	public final static String VERSION_REVISION = loadVersionProp("version.revision");
+	
+	private static String loadVersionProp(final String key) {
+		try (InputStream is = TestServer.class.getResourceAsStream("/version.properties")) {
+			if (is == null) {
+				return "dev";
+			}
+			final Properties props = new Properties();
+			props.load(is);
+			return props.getProperty(key, "dev").trim();
+		}
+		catch (Exception e) {
+			return "dev";
+		}
+	}
 	
 	/**
 	 * full version string

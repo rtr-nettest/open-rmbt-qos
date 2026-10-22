@@ -136,6 +136,62 @@
                 <version>3.15.0</version>
             </plugin>
 
+            <!-- Version from git (same schema as open-rmbt-client-cli): written to version.properties -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>git-version</id>
+                        <phase>generate-resources</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <!-- Full describe with commit hash, e.g. "v2.0.0-4-ged32b3d" (just "v2.0.0" on the tag) -->
+                                <exec executable="git"
+                                      outputproperty="git.describe.full"
+                                      resultproperty="git.result.full"
+                                      failonerror="false"
+                                      dir="${project.basedir}">
+                                    <arg value="describe"/>
+                                    <arg value="--tags"/>
+                                    <arg value="--always"/>
+                                </exec>
+                                <!-- Current branch, e.g. "dev" — suffixed onto the revision string -->
+                                <exec executable="git"
+                                      outputproperty="git.branch"
+                                      resultproperty="git.branch.result"
+                                      failonerror="false"
+                                      dir="${project.basedir}">
+                                    <arg value="rev-parse"/>
+                                    <arg value="--abbrev-ref"/>
+                                    <arg value="HEAD"/>
+                                </exec>
+                                <condition property="git.version.full"
+                                           value="${git.describe.full}"
+                                           else="dev">
+                                    <equals arg1="${git.result.full}" arg2="0"/>
+                                </condition>
+                                <!-- Full describe suffixed with branch, e.g. "v2.0.0-4-ged32b3d-dev";
+                                     if the branch is unknown, no suffix is added. -->
+                                <condition property="git.revision"
+                                           value="${git.version.full}-${git.branch}"
+                                           else="${git.version.full}">
+                                    <and>
+                                        <equals arg1="${git.branch.result}" arg2="0"/>
+                                        <length string="${git.branch}" trim="true" when="greater" length="0"/>
+                                    </and>
+                                </condition>
+                                <mkdir dir="${project.build.outputDirectory}"/>
+                                <echo file="${project.build.outputDirectory}/version.properties"
+                                      message="version.full=${git.version.full}${line.separator}version.revision=${git.revision}${line.separator}"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- Exposes ${org.mockito:mockito-core:jar} (the resolved jar path) for the surefire agent -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

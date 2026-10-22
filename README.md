@@ -75,6 +75,22 @@ java -jar target/RMBTQoSServer.jar -p 5234 -u 10000 10050 -t 200
 >
 > See `open-rmbt-qos-private/security-enhancements.md` for the full security configuration.
 
+### Version and releases
+
+The version is derived from git at build time (`git describe --tags --always`, same schema as
+`open-rmbt-client-cli`): `v2.0.0` on a tagged commit, `v2.0.0-4-ged32b3d` four commits later (just the
+commit hash if there is no tag). It is written to `version.properties` in the jar and
+
+- printed at startup (`Starting QoSTestServer v2.0.0-4-ged32b3d-master ...`, i.e. plus the branch),
+- appended to the command prompt a client gets after a successful login:
+  `ACCEPT [UDPTEST IN/OUT int int] ... [QUIT] QoS v2.0.0-4-ged32b3d` (the `QoSSP0.1` greeting is unchanged,
+  clients compare it exactly),
+- returned as `build` by the REST status resource.
+
+The GitHub workflow (`.github/workflows/build.yml`) builds and tests the jar on every push. Pushing a tag
+(e.g. `git tag v2.0.0 && git push origin v2.0.0`) additionally creates a GitHub release with
+`RMBTQoSServer.jar` and a source archive.
+
 ### Java versions
 
 Requires **Java 17**. It compiles and runs on **JDK 17 through 25** (`maven.compiler.release = 17`).

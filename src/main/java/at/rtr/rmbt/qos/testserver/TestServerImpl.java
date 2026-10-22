@@ -291,7 +291,7 @@ public class TestServerImpl {
 			throw new TestServerException("ERROR: All logging disabled! Cannot start server. Please enable at least one logging target [syslog, console, file]", null);
 		}
 		
-	    TestServerConsole.log("\nStarting QoSTestServer (" + TestServer.TEST_SERVER_VERSION_NAME + ") with settings: \n" + serverPreferences.toString() + "\n\n", 
+	    TestServerConsole.log("\nStarting QoSTestServer " + TestServer.VERSION_REVISION + " (" + TestServer.TEST_SERVER_VERSION_NAME + ") with settings: \n" + serverPreferences.toString() + "\n\n", 
 	    		-1, TestServerServiceEnum.TEST_SERVER);
 	    
 	    if (!ClientHandler.isTokenCheckEnabled()) {

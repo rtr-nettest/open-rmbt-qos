@@ -68,6 +68,13 @@ public class ClientHandler implements Runnable {
 	
 	public final static boolean ABORT_ON_DUPLICATE_UDP_PACKETS = false;
 	
+	/**
+	 * command prompt sent after a successful login, with the server version appended, e.g. 
+	 * "ACCEPT [UDPTEST IN/OUT int int] ... [QUIT] QoS v2.0.0-4-ged32b3d". The greeting itself ({@link QoSServiceProtocol#RESPONSE_GREETING}) 
+	 * is left untouched, as clients compare it exactly.
+	 */
+	public final static String ACCEPT_COMMANDS_PROMPT = QoSServiceProtocol.RESPONSE_ACCEPT_COMMANDS + " QoS " + TestServer.VERSION_FULL;
+	
 	public final static Pattern ID_REGEX_PATTERN = Pattern.compile("\\+ID([\\d]*)");
 	
 	/**
@@ -174,7 +181,7 @@ public class ClientHandler implements Runnable {
 			TestServerConsole.log("TOKEN OK", 1, TestServerServiceEnum.TEST_SERVER);
 			
 			out.write(getBytesWithNewline(QoSServiceProtocol.RESPONSE_OK));
-			out.write(getBytesWithNewline(QoSServiceProtocol.RESPONSE_ACCEPT_COMMANDS));
+			out.write(getBytesWithNewline(ACCEPT_COMMANDS_PROMPT));
 			
 			boolean quit = false;
 			
@@ -234,7 +241,7 @@ public class ClientHandler implements Runnable {
 							
 						}
 						else {
-							sendCommand(QoSServiceProtocol.RESPONSE_ACCEPT_COMMANDS, command);
+							sendCommand(ACCEPT_COMMANDS_PROMPT, command);
 							quit = true;
 						}
 					}

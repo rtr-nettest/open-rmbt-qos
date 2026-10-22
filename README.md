@@ -106,7 +106,8 @@ Settings are read by `ServerPreferences`. Precedence:
 | `server.udp.nio.ports` | Non-blocking (NIO) UDP ports (comma list). Required for VoIP tests (bidirectional streams). A port may not appear in both the blocking and NIO sets. |
 | `server.tcp.competence.sip` | TCP ports (comma list) that additionally speak the SIP test protocol, e.g. `5060`. |
 | `server.secret` | HMAC key(s) for client-token verification; a comma-separated list is allowed. Additional keys can be given as `server.secret.<name>=<key>` (e.g. one per measurement server, since the control server signs each test token with the key of the measurement server it assigned). A token is accepted if it was signed with **any** configured key. Verification is on by default (`server.token.check`). |
-| `server.token.check` | `true` (default) / `false`. `false` accepts every client token without verifying the HMAC or its age (lab/testing only). Same as the `-ntc` argument; `-Dqos.checkToken=true/false` overrides both. A warning is logged at startup when verification is off. |
+| `server.token.check` | `true` (default) / `false`. `false` accepts every client token without verification (lab/testing only). Same as the `-ntc` argument; `-Dqos.checkToken=true/false` overrides both. A warning is logged at startup when verification is off. See [Client tokens](#client-tokens). |
+| `server.token.v2only` | `true` / `false` (default). Accept only v2 tokens (bound to the client IP) and reject legacy v1 tokens. Same as `-v2only`. |
 | `server.verbose` | `0`/`1`/`2`. Does not control log output (Logback log levels do); it affects the interactive console and a few explicit `verbose >= 1` code paths. |
 
 ### REST monitoring service
@@ -151,6 +152,7 @@ not loaded automatically (use `-f` to load one).
 | `-ip <ip>` | Bind interface IP (repeatable). |
 | `-ic` | Enable the client IP check (`server.ip.check`). |
 | `-s` | Enable TLS on the control port. |
+| `-v2only` | Accept only v2 tokens (`server.token.v2only=true`). |
 | `-ntc` | Disable client-token verification (`server.token.check=false`). Insecure, lab/testing only. |
 | `-k <secret>` | HMAC secret key(s); may be repeated or a comma-separated list — required by default for token verification (see the `server.secret` note above). |
 | `-v` / `-vv` | Verbose level 1 / 2. |
@@ -158,6 +160,33 @@ not loaded automatically (use `-f` to load one).
 | `-h` | Print help and exit. |
 
 ---
+
+## Client tokens
+
+Clients authenticate with the test token issued by the control server — the same token the measurement
+server gets, verified with the same scheme as the RMBT measurement server (`open-rmbt-server`,
+`token-migration.md`). Current control servers issue a combined token:
+
+```
+<v1>_#v2#<base64 v2>
+e.g. 8723358c-2037-4029-a70c-91e5d9d35cf3_1700000000_oFAdP8+Cw9TqvJOgNc5ABOQRxss=_#v2#ZVPxAEzErM6+VBk3HmTzPw==
+```
+
+- **v1** (legacy, no `#v2#` marker): `UUID_TIMESTAMP_BASE64(HMAC-SHA1(key, "UUID_TIMESTAMP"))`, timestamp in epoch
+  seconds. Not bound to the client address.
+- **v2** (after `#v2#`): base64 of 16 bytes `time(4, big endian) | HMAC-SHA256(key, time)[0..8] |
+  HMAC-SHA256(key, time | ip16)[0..4]`; `time` = low 32 bits of the epoch start time, `ip16` = client IP as
+  IPv4-mapped IPv6. The server checks the signature **and that the control connection comes from the IP the token
+  was issued for**. If the marker is present only the v2 part is validated.
+- The control server signs each token with the key of the measurement server it assigned, so configure the keys of
+  all measurement servers (`server.secret`, `server.secret.<name>`); a token is valid if any key matches.
+- Accept window (v1 and v2): up to 600 s after and 60 s before the token's start time (the QoS test runs after
+  the speed test, hence the longer window than on the measurement server).
+- The log names the matching key, or the reason for a rejection (`INVALID_HMAC`, `INVALID_IP`, `TOO_LATE`,
+  `TOO_EARLY`, `PARSE_ERROR`, `V2_REQUIRED`).
+- **Caveat:** the v2 IP binding fails if the client reaches the control server and this server with different
+  public addresses (e.g. IPv6 to one and IPv4 to the other, or NAT pools with different public IPs). Check the
+  rejection reasons in the log before enabling `server.token.v2only`.
 
 ## Logging
 

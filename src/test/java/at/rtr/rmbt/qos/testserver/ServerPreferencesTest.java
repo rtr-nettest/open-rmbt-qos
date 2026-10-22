@@ -32,6 +32,7 @@ import java.util.Iterator;
 import org.junit.jupiter.api.Test;
 
 import at.rtr.rmbt.qos.testserver.ServerPreferences.UdpPort;
+import at.rtr.rmbt.qos.testserver.entity.SecretKey;
 
 /**
  *
@@ -120,11 +121,18 @@ public class ServerPreferencesTest {
 				+ "server.secret.measurement2=key3\n"
 				+ "server.secret.measurement1=key1\n";
 		ServerPreferences sp = new ServerPreferences(new java.io.ByteArrayInputStream(config.getBytes()));
-		assertEquals(java.util.List.of("key1", "key2", "key3"), sp.getSecretKeys(), "Secret keys");
+		assertEquals(java.util.List.of(new SecretKey("server.secret[0]", "key1"), new SecretKey("server.secret[1]", "key2"), 
+				new SecretKey("measurement2", "key3")), sp.getSecretKeys(), "Secret keys");
 		assertEquals("key1", sp.getSecretKey(), "First secret key");
+		assertFalse(sp.isTokenV2Only(), "v2 only is off by default");
 		
-		sp = new ServerPreferences(new String[] {"-k", "a,b", "-k", "c"});
-		assertEquals(java.util.List.of("a", "b", "c"), sp.getSecretKeys(), "Secret keys from arguments");
+		sp = new ServerPreferences(new String[] {"-k", "a,b", "-k", "c", "-v2only"});
+		assertEquals(java.util.List.of(new SecretKey("-k[0]", "a"), new SecretKey("-k[1]", "b"), new SecretKey("-k", "c")), 
+				sp.getSecretKeys(), "Secret keys from arguments");
+		assertTrue(sp.isTokenV2Only(), "v2 only from arguments");
+		
+		sp = new ServerPreferences(new java.io.ByteArrayInputStream("server.token.v2only=true\n".getBytes()));
+		assertTrue(sp.isTokenV2Only(), "v2 only from config");
 	}
 
 	@Test

@@ -303,7 +303,8 @@ public class TestServerImpl {
 	    			+ "') - every client will be rejected!", -1, TestServerServiceEnum.TEST_SERVER);
 	    }
 	    else {
-	    	TestServerConsole.log("Client token verification enabled with " + serverPreferences.getSecretKeys().size() + " key(s).", 
+	    	TestServerConsole.log("Client token verification enabled (" + (serverPreferences.isTokenV2Only() ? "v2 tokens only" : "v1 and v2 tokens") 
+	    			+ ") with " + serverPreferences.getSecretKeys().size() + " key(s): " + serverPreferences.getSecretKeys(), 
 	    			-1, TestServerServiceEnum.TEST_SERVER);
 	    }
 	    

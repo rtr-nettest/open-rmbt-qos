@@ -32,10 +32,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -53,7 +50,6 @@ import at.rtr.rmbt.qos.testserver.udp.VoipTestCandidate;
 import at.rtr.rmbt.qos.testserver.util.TestServerConsole;
 import com.google.gson.Gson;
 
-import at.rtr.rmbt.shared.Helperfunctions;
 import at.rtr.rmbt.shared.qos.UdpPayload;
 import at.rtr.rmbt.shared.qos.util.UdpPayloadUtil;
 import at.rtr.rmbt.qos.testserver.ServerPreferences.TestServerServiceEnum;
@@ -75,8 +71,8 @@ public class ClientHandler implements Runnable {
 	public final static Pattern ID_REGEX_PATTERN = Pattern.compile("\\+ID([\\d]*)");
 	
 	/**
-	 * TOKEN uuid_timestamp_hmac, optionally followed by further "_"-separated fields (newer clients append
-	 * e.g. "_#v2#..."); the base64 HMAC itself never contains "_".
+	 * TOKEN uuid_timestamp_hmac, optionally followed by "_#v2#&lt;base64&gt;" (see {@link TokenVerifier});
+	 * the base64 HMAC itself never contains "_". Used to extract the client uuid.
 	 */
 	public final static Pattern TOKEN_REGEX_PATTERN = Pattern.compile("TOKEN ([\\d\\w-]*)_([\\d]*)_([^_\\s]*)");
 	
@@ -323,15 +319,17 @@ public class ClientHandler implements Runnable {
 				String hmac = m.group(3);
 
 				if (isTokenCheckEnabled()) {
-					final boolean isHmacValid = isHmacValid(uuid + "_" + timeStamp, hmac, TestServer.getInstance().serverPreferences.getSecretKeys());
-					// The control server issues the test slot as epoch seconds (rmbt_get_next_test_slot);
-					// accept millisecond timestamps as well.
-					final long timeStampMs = timeStamp < 100_000_000_000L ? timeStamp * 1000 : timeStamp;
-					if (isHmacValid && (timeStampMs + QoSServiceProtocol.TOKEN_LEGAL_TIME >= System.currentTimeMillis())) {
+					final ServerPreferences serverPreferences = TestServer.getInstance().serverPreferences;
+					final TokenVerifier.Result result = TokenVerifier.verify(token.substring("TOKEN ".length()), serverPreferences.getSecretKeys(), 
+							socket.getInetAddress(), serverPreferences.isTokenV2Only(), System.currentTimeMillis());
+					if (result.isAccepted()) {
+						TestServerConsole.log(name + " " + result.version() + " token " + result.reason() + ", uuid=" + uuid, 0, TestServerServiceEnum.TEST_SERVER);
 						clientToken = new ClientToken(uuid, timeStamp, hmac);
 						return clientToken;
 					}
 					else {
+						TestServerConsole.log(name + " " + result.version() + " token rejected (" + result.status() + "): " + result.reason() 
+								+ (result.keyLabel() != null ? " [key '" + result.keyLabel() + "']" : "") + ", uuid=" + uuid, 0, TestServerServiceEnum.TEST_SERVER);
 						// Do not echo the supplied/expected HMAC back to the client. (Security review L3.)
 						throw new IOException("BAD TOKEN\n");
 					}
@@ -350,19 +348,6 @@ public class ClientHandler implements Runnable {
 			// Do not echo the raw token back to the client. (Security review L3.)
 			throw new IOException("BAD TOKEN");
 		}
-	}
-
-	/**
-	 * @return true if <code>hmac</code> is the HMAC of <code>data</code> for any of the given keys
-	 */
-	protected static boolean isHmacValid(final String data, final String hmac, final List<String> keys) {
-		final byte[] hmacBytes = hmac.getBytes(StandardCharsets.US_ASCII);
-		boolean isValid = false;
-		for (String key : keys) {
-			// constant time comparison; check all keys to not leak which one matched
-			isValid |= MessageDigest.isEqual(Helperfunctions.calculateHMAC(key, data).getBytes(StandardCharsets.US_ASCII), hmacBytes);
-		}
-		return isValid;
 	}
 
 	/**

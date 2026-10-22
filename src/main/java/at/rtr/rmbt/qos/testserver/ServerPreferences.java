@@ -36,6 +36,7 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import at.rtr.rmbt.qos.testserver.entity.SecretKey;
 import at.rtr.rmbt.qos.testserver.plugin.rest.RestService;
 
 /**
@@ -101,6 +102,7 @@ public class ServerPreferences {
 	public static final String ARG_CONFIG_FILE = "-F";
 	public static final String ARG_SECRET_KEY = "-K";
 	public static final String ARG_NO_TOKEN_CHECK = "-NTC";
+	public static final String ARG_TOKEN_V2_ONLY = "-V2ONLY";
 	public static final String ARG_USE_SSL = "-S";
 	public static final String ARG_VERBOSE = "-V";
 	public static final String ARG_VERBOSE2 = "-VV";
@@ -110,6 +112,7 @@ public class ServerPreferences {
 	public static final String PARAM_SERVER_THREADS = "server.threads";
 	public static final String PARAM_SERVER_SECRET_KEY = "server.secret";
 	public static final String PARAM_SERVER_TOKEN_CHECK = "server.token.check";
+	public static final String PARAM_SERVER_TOKEN_V2_ONLY = "server.token.v2only";
 	public static final String PARAM_SERVER_USE_SSL = "server.ssl";
 	public static final String PARAM_SERVER_SSL_KEYSTORE = "server.ssl.keystore";
 	public static final String PARAM_SERVER_SSL_KEYSTORE_PASSWORD = "server.ssl.keystore.password";
@@ -159,7 +162,8 @@ public class ServerPreferences {
 	private String sslKey = null;
 	private int verboseLevel = 0;
 	/** keys used to verify client tokens; a token is valid if it was signed with any of them */
-	private final List<String> secretKeys = new ArrayList<>();
+	private final List<SecretKey> secretKeys = new ArrayList<>();
+	private boolean isTokenV2Only = false;
 	private boolean isIpCheck = false;
 	private boolean isTokenCheck = true;
 	private boolean isLoggingEnabled = true;
@@ -242,10 +246,13 @@ public class ServerPreferences {
 		    		loadFromConfigFile(args[++i]);
 		    	}
 		    	else if (arg.equals(ARG_SECRET_KEY)) {
-		    		addSecretKeys(args[++i]);
+		    		addSecretKeys("-k", args[++i]);
 		    	}
 		    	else if (arg.equals(ARG_NO_TOKEN_CHECK)) {
 		    		isTokenCheck = false;
+		    	}
+		    	else if (arg.equals(ARG_TOKEN_V2_ONLY)) {
+		    		isTokenV2Only = true;
 		    	}
 		    	else if (arg.equals(ARG_USE_SSL)) {
 		    		useSsl = true;
@@ -391,19 +398,24 @@ public class ServerPreferences {
 	   		
 	   		param = prop.getProperty(PARAM_SERVER_SECRET_KEY);
 	   		if (param!=null) {
-		   		addSecretKeys(param);
+		   		addSecretKeys(PARAM_SERVER_SECRET_KEY, param);
 	   		}
 	   		
 	   		//additional named keys: server.secret.<name>=<key>
 	   		for (String name : new TreeSet<>(prop.stringPropertyNames())) {
 	   			if (name.startsWith(PARAM_SERVER_SECRET_KEY + ".")) {
-	   				addSecretKeys(prop.getProperty(name));
+	   				addSecretKeys(name.substring(PARAM_SERVER_SECRET_KEY.length() + 1), prop.getProperty(name));
 	   			}
 	   		}
 
 	   		param = prop.getProperty(PARAM_SERVER_TOKEN_CHECK);
 	   		if (param!=null) {
 		   		isTokenCheck = Boolean.parseBoolean(param.trim());
+	   		}
+
+	   		param = prop.getProperty(PARAM_SERVER_TOKEN_V2_ONLY);
+	   		if (param!=null) {
+		   		isTokenV2Only = Boolean.parseBoolean(param.trim());
 	   		}
 
 	   		param = prop.getProperty(PARAM_SERVER_COMMAND_CONSOLE);
@@ -608,14 +620,14 @@ public class ServerPreferences {
 	 * @return the first configured secret key or null
 	 */
 	public String getSecretKey() {
-		return secretKeys.isEmpty() ? null : secretKeys.get(0);
+		return secretKeys.isEmpty() ? null : secretKeys.get(0).key();
 	}
 	
 	/**
 	 * 
 	 * @return all keys a client token may be signed with
 	 */
-	public List<String> getSecretKeys() {
+	public List<SecretKey> getSecretKeys() {
 		return Collections.unmodifiableList(secretKeys);
 	}
 	
@@ -625,23 +637,36 @@ public class ServerPreferences {
 	 */
 	public void setSecretKey(String secretKey) {
 		secretKeys.clear();
-		addSecretKeys(secretKey);
+		addSecretKeys(PARAM_SERVER_SECRET_KEY, secretKey);
 	}
 	
 	/**
 	 * adds one key or a comma separated list of keys (duplicates and empty entries are ignored)
+	 * @param label name of the key(s) used in log messages; numbered if a list is given
 	 * @param keys
 	 */
-	public void addSecretKeys(String keys) {
+	public void addSecretKeys(String label, String keys) {
 		if (keys == null) {
 			return;
 		}
-		for (String key : keys.split(",")) {
-			key = key.trim();
-			if (!key.isEmpty() && !secretKeys.contains(key)) {
-				secretKeys.add(key);
+		final String[] keyArray = keys.split(",");
+		for (int i = 0; i < keyArray.length; i++) {
+			final String key = keyArray[i].trim();
+			if (!key.isEmpty() && secretKeys.stream().noneMatch(k -> k.key().equals(key))) {
+				secretKeys.add(new SecretKey(keyArray.length > 1 ? label + "[" + i + "]" : label, key));
 			}
 		}
+	}
+	
+	/**
+	 * @return true if only v2 tokens (IP bound) are accepted (<code>server.token.v2only</code> or <code>-v2only</code>)
+	 */
+	public boolean isTokenV2Only() {
+		return isTokenV2Only;
+	}
+
+	public void setTokenV2Only(boolean isTokenV2Only) {
+		this.isTokenV2Only = isTokenV2Only;
 	}
 	
 	/**
@@ -758,6 +783,7 @@ public class ServerPreferences {
 		System.out.println("-u [min_port_number] [max_port_number] => supported udp port range by this server: from min_port_number to max_port_number (both inclusive).");
 		System.out.println("-t [max_threads] => The max number of threads (clients) this server can handle at the same time (default: 100).");
 		System.out.println("-k [secret_key] => A secret key used to verify client tokens (may be repeated or a comma separated list).");
+		System.out.println("-v2only => accept only v2 tokens (bound to the client IP), reject legacy v1 tokens (config: server.token.v2only=true).");
 		System.out.println("-ntc => do not verify client tokens (INSECURE, lab/testing only; config: server.token.check=false).");
 		System.out.println("\nExample: -p 5234 -u 10000 20000 => makes the server listen on port 5234 for incoming test requests and let it accept udp test connections on ports 10000 to 20000 (inclusive).");
 		System.out.println("\nIf no parameter is set then the default config file config.properties is being used. If this file isn't found, the default values are being used.");
@@ -889,7 +915,7 @@ public class ServerPreferences {
 				+ useSsl + ", sslKeystore=" + (sslCertificate != null ? sslCertificate + " + " + sslKey 
 						: sslKeystore != null ? sslKeystore : "classpath:" + TestServer.QOS_KEY_FILE)
 				+ ", verboseLevel=" + verboseLevel + ", secretKey="
-				+ "[" + secretKeys.size() + " key(s)]" + ", isTokenCheck=" + isTokenCheck + ", isIpCheck=" + isIpCheck
+				+ secretKeys + ", isTokenCheck=" + isTokenCheck + ", isTokenV2Only=" + isTokenV2Only + ", isIpCheck=" + isIpCheck
 				+ ", isLoggingEnabled=" + isLoggingEnabled
 				+ ", loggingPattern=" + loggingPattern + ", isSyslogEnabled="
 				+ isSyslogEnabled + ", syslogHost=" + syslogHost

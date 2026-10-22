@@ -196,13 +196,28 @@ public class ClientHandlerTest {
 			assertNotNull(ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("third", data) + "\n"));
 			assertThrows(IOException.class, () -> ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("fourth", data) + "\n"));
 			sp.setSecretKey("secret");
-			// newer clients append further fields after the HMAC
-			assertNotNull(ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("secret", data) + "_#v2#ato5KX0xLOYfJswZcjbThw==\n"));
+			// v2 token: bound to the client IP of the control connection (the test socket reports the loopback address)
+			final long now = System.currentTimeMillis() / 1000;
+			assertNotNull(ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("secret", data) + "_#v2#" 
+					+ v2Token("secret", InetAddress.getLoopbackAddress(), now) + "\n"));
+			assertThrows(IOException.class, () -> ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("secret", data) + "_#v2#" 
+					+ v2Token("secret", InetAddress.getByName("192.0.2.1"), now) + "\n"));
+			// if a v2 part is present, it is validated instead of the v1 part: a foreign v2 part is rejected
+			assertThrows(IOException.class, () -> ch.checkToken("TOKEN " + data + "_" + Helperfunctions.calculateHMAC("secret", data) + "_#v2#ato5KX0xLOYfJswZcjbThw==\n"));
 		}
 		finally {
 			TestServer.getInstance().serverPreferences = previousPreferences;
 			restoreProperty("qos.checkToken", previous);
 		}
+	}
+
+	private static String v2Token(final String key, final InetAddress ip, final long time) {
+		final byte[] timeBytes = java.nio.ByteBuffer.allocate(4).putInt((int) time).array();
+		final java.nio.ByteBuffer token = java.nio.ByteBuffer.allocate(16);
+		token.put(timeBytes);
+		token.put(java.util.Arrays.copyOf(TokenVerifier.hmacSha256(key.getBytes(), timeBytes), 8));
+		token.put(java.util.Arrays.copyOf(TokenVerifier.hmacSha256(key.getBytes(), timeBytes, TokenVerifier.toMappedIpv6(ip)), 4));
+		return java.util.Base64.getEncoder().encodeToString(token.array());
 	}
 
 	private static void restoreProperty(final String key, final String value) {

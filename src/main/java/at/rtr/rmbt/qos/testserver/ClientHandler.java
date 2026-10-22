@@ -951,6 +951,10 @@ public class ClientHandler implements Runnable {
     	}
     	requireInRange(sampleRate, MAX_SAMPLE_RATE, "sampleRate", command);
     	requireInRange(bps, MAX_BITS_PER_SAMPLE, "bitsPerSample", command);
+    	if (sampleRate < 1 || bps < 8) {
+    		// a sample rate of 0 or less than one byte per sample gives an empty, meaningless RTP stream
+    		throw new IOException("illegal sampleRate/bitsPerSample " + sampleRate + "/" + bps + " (min 1/8): " + command);
+    	}
     	// payload size as calculated by RtpUtil.runVoipStream; the server allocates and sends one per packet
     	final long rtpPayloadSize = (long) sampleRate / (1000 / delay) * (bps / 8);
     	if (rtpPayloadSize > MAX_RTP_PAYLOAD) {

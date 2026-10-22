@@ -173,7 +173,7 @@ public class RtpUtil {
 		TreeSet<RtpSequence> sequenceSet = new TreeSet<>();
 
 		long maxJitter = 0;
-		long meanJitter = 0;
+		double jitterSum = 0;
 		long skew = 0;
 		long maxDelta = 0;
 		long tsDiff = 0;
@@ -197,7 +197,7 @@ public class RtpUtil {
 				maxDelta = Math.max(delta, maxDelta);;
 				skew += TimeUnit.NANOSECONDS.convert((long) (((float)(j.rtpPacket.getTimestamp() - i.rtpPacket.getTimestamp()) / (float)sampleRate) * 1000f), TimeUnit.MILLISECONDS) - tsDiff;
 				maxJitter = Math.max((long)jitter, maxJitter);
-				meanJitter += jitter;
+				jitterSum += jitter;
 			}
 			else {
 				jitterMap.put(x, 0f);
@@ -236,7 +236,9 @@ public class RtpUtil {
 			minSequential = maxSequential;
 		}
 
-		return new RtpQoSResult(maxJitter, meanJitter / jitterMap.size(), skew, maxDelta,
+		// no packets received: mean jitter 0 (instead of dividing by zero, which suppressed the result)
+		final long meanJitter = jitterMap.isEmpty() ? 0 : Math.round(jitterSum / jitterMap.size());
+		return new RtpQoSResult(maxJitter, meanJitter, skew, maxDelta,
 				packetsOutOfOrder, minSequential, maxSequential,
 				stalls, stalls == 0 ? 0 : (TimeUnit.MILLISECONDS.convert(stallTime, TimeUnit.NANOSECONDS) / stalls), jitterMap);
 	}

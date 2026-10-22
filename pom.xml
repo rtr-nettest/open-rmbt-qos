@@ -127,7 +127,10 @@
     </dependencies>
 
     <build>
-        <finalName>RMBTQoSServer</finalName>
+        <!-- plain "mvn" = "mvn package" (build + test the runnable jar) -->
+        <defaultGoal>package</defaultGoal>
+        <!-- plain jar with the project classes only; the runnable jar is RMBTQoSServer.jar (shade plugin below) -->
+        <finalName>RMBTQoSServer-classes</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -230,6 +233,9 @@
                         </goals>
                         <configuration>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <!-- write the runnable jar to its own file instead of replacing the plain jar
+                                 (which the plugin would otherwise keep as "original-*.jar") -->
+                            <outputFile>${project.build.directory}/RMBTQoSServer.jar</outputFile>
                             <transformers>
                                 <transformer
                                         implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">

@@ -37,18 +37,16 @@ The full wire protocol (commands, responses, appendices) is documented in [`PROT
 
 ## Building and running
 
-Standard Maven project producing a single runnable "fat" jar:
+Standard Maven project producing a single runnable "fat" jar. A plain `mvn` builds, tests and
+packages it (default goal `package`):
 
 ```bash
-mvn package
-# -> target/RMBTQoSServer.jar   (Main-Class: at.rtr.rmbt.qos.testserver.TestServer)
+mvn
+# -> target/RMBTQoSServer.jar           runnable jar incl. all libraries (Main-Class: at.rtr.rmbt.qos.testserver.TestServer)
+#    target/RMBTQoSServer-classes.jar   the project classes only (intermediate build product, not needed to run)
 ```
 
-Run the unit tests:
-
-```bash
-mvn test
-```
+Run only the unit tests: `mvn test`; start from scratch: `mvn clean package`.
 
 Run the server:
 
@@ -126,7 +124,7 @@ filtering (a filtering firewall would distort the test results). Open/allow:
 useradd --system --home-dir /opt/qos-server --shell /usr/sbin/nologin qos
 mkdir -p /opt/qos-server
 
-# 2. jar (built with "mvn package" or downloaded from a release) and configuration
+# 2. jar (built with "mvn" or downloaded from a release) and configuration
 cp target/RMBTQoSServer.jar config.properties /opt/qos-server/
 chown -R qos:qos /opt/qos-server          # the server writes guard.properties there
 chmod 600 /opt/qos-server/config.properties   # contains the token keys
@@ -419,31 +417,25 @@ read `status` to alert on crashes.
 
 ## TLS
 
-When `server.ssl=true` the server builds its TLS context from, in this order:
+With `server.ssl=true` the control port speaks TLS. The certificate is read, in this order, from
 
-1. `server.ssl.certificate` + `server.ssl.key` — PEM files, e.g. directly from Let's Encrypt:
+1. `server.ssl.certificate` + `server.ssl.key` — **PEM files**, e.g. directly from Let's Encrypt (the
+   recommended way; no conversion needed):
    ```properties
    server.ssl.certificate=/etc/letsencrypt/live/example.org/fullchain.pem
    server.ssl.key=/etc/letsencrypt/live/example.org/privkey.pem
    ```
-2. `server.ssl.keystore` (+ `server.ssl.keystore.password`) — a JKS or PKCS12 file,
-3. the classpath resource **`/crt/qosserver.jks`** (not included in the repository).
+   The key has to be an unencrypted PKCS#8 PEM key (`-----BEGIN PRIVATE KEY-----`, as issued by
+   Let's Encrypt; RSA, EC and Ed25519 are supported) and readable by the service user.
+2. `server.ssl.keystore` + `server.ssl.keystore.password` (+ optional `server.ssl.keystore.type`) — a
+   PKCS12 or JKS keystore, if you already have one,
+3. the legacy classpath resource `/crt/qosserver.jks` inside the jar (only if nothing is configured).
+
+Restart the server after a certificate renewal (e.g. from a certbot deploy hook). Protocol versions and
+cipher suites are the JDK defaults (TLS 1.2/1.3). Clients are authenticated by their token, not by
+client certificates, so none are requested.
 
 The REST interface (`server.service.rest.ssl=true`) only supports a keystore file (`server.ssl.keystore`).
-
-The TLS context is created with `SSLContext.getInstance("TLS")` and no explicit protocol or cipher
-configuration, so the JDK negotiates the protocol version (TLS 1.2/1.3 on JDK 17–25) and default
-cipher suites. The default keystore password is hard-coded in the source (`TestServer.QOS_KEY_PASSWORD`), the server uses a trust-all client `TrustManager` (clients are
-authenticated by the HMAC token, not by client certificates), and protocols/ciphers/cert rotation are
-not configurable without code changes. For production, terminating TLS with a wrapper such as
-**stunnel** (or a reverse proxy) in front of the plain control port is recommended.
-
-Generate a keystore with:
-
-```bash
-keytool -genkey -keyalg RSA -alias Qos -keystore qosserver.jks \
-        -storepass [STORE_PW] -keypass [ALIAS_PW]
-```
 
 ---
 

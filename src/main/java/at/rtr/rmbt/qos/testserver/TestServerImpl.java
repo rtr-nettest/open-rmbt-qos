@@ -57,7 +57,6 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
-import javax.net.ssl.TrustManager;
 
 import at.rtr.rmbt.qos.testserver.entity.TestCandidate;
 import at.rtr.rmbt.qos.testserver.servers.AbstractUdpServer;
@@ -361,7 +360,9 @@ public class TestServerImpl {
 	            kmf.init(ks, serverPreferences.getSslKeystorePassword().toCharArray());
 			    final SSLContext sslContext = SSLContext.getInstance("TLS");
 	            // Initialize the SSL context
-	            sslContext.init(kmf.getKeyManagers(), new TrustManager[] {TestServer.getTrustingManager()}, new SecureRandom());
+	            // no client certificates are requested (clients authenticate with the token), so the
+	            // JDK default trust managers are sufficient
+	            sslContext.init(kmf.getKeyManagers(), null, new SecureRandom());
 	            
 				sslServerSocketFactory = (SSLServerSocketFactory) sslContext.getServerSocketFactory();    	
 		    }

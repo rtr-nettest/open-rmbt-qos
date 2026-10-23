@@ -160,6 +160,13 @@ public class ServerPreferencesTest {
 		
 		sp = new ServerPreferences(new java.io.ByteArrayInputStream("server.ssl.tls13only=true\n".getBytes()));
 		assertTrue(sp.isTls13Only(), "TLS 1.3 only from config");
+		assertFalse(sp.isLogFullIp(), "IPs are anonymized by default");
+		
+		sp = new ServerPreferences(new String[] {"-k", "a", "-fullip"});
+		assertTrue(sp.isLogFullIp(), "full IPs from arguments");
+		
+		sp = new ServerPreferences(new java.io.ByteArrayInputStream("server.log.fullip=true\n".getBytes()));
+		assertTrue(sp.isLogFullIp(), "full IPs from config");
 	}
 
 	@Test

@@ -90,6 +90,7 @@ public class LoggingService {
 	 */
 	public static void init(final TestServerImpl testServerImpl) {
 		configure();
+		ANONYMIZE_IPS = testServerImpl.serverPreferences == null || !testServerImpl.serverPreferences.isLogFullIp();
 		
 		final String logHost = getSetting("LOG_HOST");
 		if (logHost == null || logHost.isBlank()) {
@@ -198,6 +199,16 @@ public class LoggingService {
 		return sb.toString();
 	}
 	
+	/**
+	 * true: IP addresses in log messages are anonymized (default), see {@link IpAnonymizer};
+	 * false with <code>server.log.fullip=true</code> / <code>-fullip</code>
+	 */
+	public static volatile boolean ANONYMIZE_IPS = true;
+	
+	private static String ip(final String message) {
+		return ANONYMIZE_IPS ? IpAnonymizer.anonymize(message) : message;
+	}
+	
 	private static String getSetting(final String name) {
 		final String value = System.getProperty(name);
 		return value != null ? value : System.getenv(name);
@@ -209,9 +220,9 @@ public class LoggingService {
 	public static void fatal(Throwable t, String message, TestServerServiceEnum service) {
 		final Logger l = logger(service);
 		if (t != null) {
-			l.error("[" + t.getClass().getCanonicalName() + ": " + t.getLocalizedMessage() + "] " + message, t);
+			l.error(ip("[" + t.getClass().getCanonicalName() + ": " + t.getLocalizedMessage() + "] " + message), t);
 		} else {
-			l.error("[unknown Exception] " + message);
+			l.error(ip("[unknown Exception] " + message));
 		}
 	}
 
@@ -221,9 +232,9 @@ public class LoggingService {
 	public static void error(Throwable t, String message, TestServerServiceEnum service) {
 		final Logger l = logger(service);
 		if (t != null) {
-			l.error("[" + t.getClass().getCanonicalName() + ": " + t.getLocalizedMessage() + "] " + message, t);
+			l.error(ip("[" + t.getClass().getCanonicalName() + ": " + t.getLocalizedMessage() + "] " + message), t);
 		} else {
-			l.error("[unknown Exception] " + message);
+			l.error(ip("[unknown Exception] " + message));
 		}
 	}
 
@@ -231,20 +242,20 @@ public class LoggingService {
 	 * warn level logging
 	 */
 	public static void warn(String message, TestServerServiceEnum service) {
-		logger(service).warn(message);
+		logger(service).warn(ip(message));
 	}
 
 	/**
 	 * info level logging
 	 */
 	public static void info(String message, TestServerServiceEnum service) {
-		logger(service).info(message);
+		logger(service).info(ip(message));
 	}
 
 	/**
 	 * debug level logging
 	 */
 	public static void debug(String message, TestServerServiceEnum service) {
-		logger(service).debug(message);
+		logger(service).debug(ip(message));
 	}
 }

@@ -208,6 +208,7 @@ single `FATAL: …` line and the process exits with code `1` (so systemd and scr
 | `server.ssl.certificate` / `server.ssl.key` | PEM certificate chain (e.g. Let's Encrypt `fullchain.pem`) and unencrypted PKCS#8 PEM private key (`privkey.pem`). Takes precedence over a keystore. Restart the server after a certificate renewal. |
 | `server.ssl.keystore` / `server.ssl.keystore.password` / `server.ssl.keystore.type` | Alternatively a JKS or PKCS12 keystore file (type derived from the `.p12`/`.pfx` extension if not set). If neither PEM files nor a keystore are configured, the keystore is loaded from `/crt/qosserver.jks` inside the jar. |
 | `server.ssl.tls13only` | `true` / `false` (default). Offer only TLS 1.3 and disable TLS 1.2. Same as `-tls13only`. See [TLS](#tls). |
+| `server.log.fullip` | `true` / `false` (default). Log full client IP addresses instead of anonymized ones (`77.116.45.x`, IPv6 /48). Same as `-fullip`. See [Logging](#logging). |
 | `server.threads` | Size of the fixed worker thread pool = max simultaneous control connections. Minimum 5 (startup fails below that); a warning is printed at ≤ 10. Newer clients open one connection per test (~25 per test run), so use e.g. `200`. |
 | `server.connections.perip` | Max simultaneous control connections from one client IP (default `50`); further connections are closed right away. Keep it well below `server.threads` so a single host cannot occupy all workers. |
 | `server.ip.check` | `true`/`false`. If true, only client IPs registered during test setup receive responses (a per-IP candidate map is enforced). |
@@ -262,6 +263,7 @@ not loaded automatically (use `-f` to load one).
 | `-ip <ip>` | Bind interface IP (repeatable). |
 | `-ic` | Enable the client IP check (`server.ip.check`). |
 | `-s` | Enable TLS on the control port. |
+| `-fullip` | Log full client IP addresses (`server.log.fullip=true`). |
 | `-tls13only` | Offer only TLS 1.3 (`server.ssl.tls13only=true`). |
 | `-v2only` | Accept only v2 tokens (`server.token.v2only=true`). |
 | `-ntc` | Disable client-token verification (`server.token.check=false`). Insecure, lab/testing only. |
@@ -308,6 +310,12 @@ console (stdout) — under systemd that ends up in the journal (`journalctl -u o
 Per connection the server logs one line at `INFO` (token accepted/rejected, e.g.
 `rejected: no TOKEN command: 'GET / HTTP/1.1'` for a browser), the commands of authenticated clients
 and idle/handshake timeouts. Connection setup and teardown are logged at `DEBUG`.
+
+**Client IP addresses are anonymized** in all log messages (console and Logstash): IPv4 addresses keep the
+first three octets (`77.116.45.207` → `77.116.45.x`), IPv6 addresses the first three groups, i.e. the /48
+prefix (`2001:4bb8:1234:5678::1` → `2001:4bb8:1234:x`); ports are kept (`/77.116.45.x:38201`). This also
+applies to the server's own addresses. To log full addresses set `server.log.fullip=true` (or `-fullip`).
+Exception stack traces may still contain addresses in rare cases.
 
 At startup the server prints which configuration it uses, e.g. `Logging configuration: built-in
 (console, INFO)` or `Logging configuration: /opt/open-rmbt-qos/logback.xml`.

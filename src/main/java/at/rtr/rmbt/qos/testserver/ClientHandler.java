@@ -186,8 +186,7 @@ public class ClientHandler implements Runnable {
 	 */
 	@Override
 	public void run() {
-		TestServerConsole.log("New connection from: " + socket.getInetAddress().toString(),
-				0, TestServerServiceEnum.TEST_SERVER);
+		TestServerConsole.debug("New connection from: " + socket.getInetAddress().toString(), TestServerServiceEnum.TEST_SERVER);
 		String message;
 		String command = null;
 		
@@ -224,17 +223,18 @@ public class ClientHandler implements Runnable {
 				TestServerConsole.log(name + " connection closed before TOKEN", 1, TestServerServiceEnum.TEST_SERVER);
 				return;
 			}
-			TestServerConsole.log("GOT: " + LineReader.sanitize(message), 1, TestServerServiceEnum.TEST_SERVER);
-			
 			ClientToken token;
 			try {
 				token = checkToken(message);
 			}
+			catch (IOException e) {
+				// rejected: logged as one line by checkToken, the connection is closed in finally
+				return;
+			}
 			finally {
 				handshakeTimeout.cancel(false);
 			}
-			
-			TestServerConsole.log("TOKEN OK", 1, TestServerServiceEnum.TEST_SERVER);
+
 			socket.setSoTimeout(QoSServiceProtocol.TIMEOUT_CLIENTHANDLER_CONNECTION_MIN_VALUE);
 			
 			out.write(getBytesWithNewline(QoSServiceProtocol.RESPONSE_OK));
@@ -328,8 +328,7 @@ public class ClientHandler implements Runnable {
 			if (socket != null && !socket.isClosed()) {
 				try {
 					socket.close();
-					TestServerConsole.log(name + " Connection closed!", 
-							0, TestServerServiceEnum.TEST_SERVER);
+					TestServerConsole.debug(name + " Connection closed", TestServerServiceEnum.TEST_SERVER);
 				} catch (Exception e) {
 					TestServerConsole.error(name + " Could not close socket!", e, 0, TestServerServiceEnum.TEST_SERVER);
 				}
@@ -375,12 +374,13 @@ public class ClientHandler implements Runnable {
 		ClientToken clientToken;
 		
 		try {
-			TestServerConsole.log("Got token: " + LineReader.sanitize(token), 0, TestServerServiceEnum.TEST_SERVER);
 			Matcher m = TOKEN_REGEX_PATTERN.matcher(token);
 
 			// Use the find() result, not groupCount() (which is the pattern's constant group count
 			// and never detects a non-match). (Security review M2.)
 			if (!m.find()) {
+				// e.g. browsers or scanners sending HTTP: one line, no stack trace
+				TestServerConsole.log(name + " rejected: no TOKEN command: '" + LineReader.sanitize(abbreviate(token, 80)) + "'", 0, TestServerServiceEnum.TEST_SERVER);
 				throw new IOException("BAD TOKEN: Bad Arguments!\n");
 			}
 			else {
@@ -414,10 +414,14 @@ public class ClientHandler implements Runnable {
 
 		}
 		catch (Exception e) {
-			e.printStackTrace();
+			TestServerConsole.log(name + " rejected: malformed token (" + e.getClass().getSimpleName() + ")", 0, TestServerServiceEnum.TEST_SERVER);
 			// Do not echo the raw token back to the client. (Security review L3.)
 			throw new IOException("BAD TOKEN");
 		}
+	}
+	
+	private static String abbreviate(final String s, final int maxLength) {
+		return s.length() <= maxLength ? s : s.substring(0, maxLength) + "...";
 	}
 
 	/**

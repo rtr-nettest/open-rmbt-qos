@@ -305,6 +305,13 @@ Logging uses **SLF4J + Logback**. The configuration bundled in the jar
 ([`src/main/resources/logback.xml`](src/main/resources/logback.xml)) logs everything at `INFO` to the
 console (stdout) — under systemd that ends up in the journal (`journalctl -u open-rmbt-qos`).
 
+Per connection the server logs one line at `INFO` (token accepted/rejected, e.g.
+`rejected: no TOKEN command: 'GET / HTTP/1.1'` for a browser), the commands of authenticated clients
+and idle/handshake timeouts. Connection setup and teardown are logged at `DEBUG`.
+
+At startup the server prints which configuration it uses, e.g. `Logging configuration: built-in
+(console, INFO)` or `Logging configuration: /opt/open-rmbt-qos/logback.xml`.
+
 ### Loggers
 
 | Logger | Content |
@@ -319,8 +326,13 @@ more/less detail.
 
 ### Own configuration file
 
-To change levels or add appenders, put a Logback configuration next to the jar and pass it with
-`-Dlogback.configurationFile` — e.g. `/opt/open-rmbt-qos/logback.xml`:
+To change levels or add appenders, put a Logback configuration named **`logback.xml` into the working
+directory** of the server (e.g. `/opt/open-rmbt-qos/logback.xml`); it is used automatically. Alternatively
+pass any file with `-Dlogback.configurationFile=<path>` (this takes precedence). If that file does not exist
+or is not readable, the server prints a `WARNING` at startup and uses the built-in configuration. Errors in
+the file are printed at startup as `ERROR in <file>: …`.
+
+Example with a log file:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -356,10 +368,9 @@ To change levels or add appenders, put a Logback configuration next to the jar a
 ```
 
 With `scan="true"` Logback re-reads the file at runtime, so log levels can be changed without a restart.
-In the systemd unit:
+For a log file, the systemd unit needs:
 
 ```ini
-ExecStart=/usr/bin/java -Dlogback.configurationFile=/opt/open-rmbt-qos/logback.xml -jar RMBTQoSServer.jar
 # the unit uses ProtectSystem=strict, so the log directory must be writable explicitly:
 ReadWritePaths=/opt/open-rmbt-qos /var/log/open-rmbt-qos
 LogsDirectory=open-rmbt-qos
@@ -376,7 +387,21 @@ configuration file, and logged at startup (`Sending logs to Logstash at ...`):
 LOG_HOST=logstash.example.org LOG_PORT=4560 java -jar RMBTQoSServer.jar
 ```
 
-In the systemd unit: `Environment=LOG_HOST=logstash.example.org`.
+In the systemd unit (e.g. with `systemctl edit open-rmbt-qos`):
+
+```ini
+[Service]
+Environment=LOG_HOST=logstash.example.org
+Environment=LOG_PORT=4560
+```
+
+The receiver must accept JSON lines over TCP (Logstash: `input { tcp { port => 4560 codec => json_lines } }`).
+If it is unreachable, the server keeps running and reconnects; log events are buffered and dropped when the
+buffer is full.
+
+**Full log remote, only warnings in the journal:** copy [`logback-remote.xml`](logback-remote.xml) as
+`logback.xml` into the working directory. The console (journal) then only gets warnings and errors, while
+Logstash receives everything at `INFO`.
 
 ---
 
@@ -518,6 +543,7 @@ The limits are constants in `ClientHandler`, `TcpClientHandler`, `SipCompetence`
 - `legacy-tests/` — JUnit 4 + JMockit tests, excluded from the build (see `legacy-tests/README.md`).
 - `config.properties` — server configuration.
 - `open-rmbt-qos.service` — systemd unit (see [Installation](#installation)).
+- `logback-remote.xml` — logging configuration: full log to Logstash, only warnings to the journal (see [Logging](#logging)).
 - `qos_server.sh` — legacy SysV init script (superseded by the systemd unit).
 - `.github/workflows/build.yml` — build/test on every push, GitHub release on tags.
 - `PROTOCOL.md` — the client/server wire protocol.

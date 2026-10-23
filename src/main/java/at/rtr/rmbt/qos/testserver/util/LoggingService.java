@@ -17,7 +17,9 @@
  *******************************************************************************/
 package at.rtr.rmbt.qos.testserver.util;
 
+import java.io.File;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 
 import at.rtr.rmbt.qos.testserver.ServerPreferences.TestServerServiceEnum;
@@ -26,6 +28,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.joran.JoranConfigurator;
+import ch.qos.logback.core.joran.spi.JoranException;
+import ch.qos.logback.core.status.Status;
 import net.logstash.logback.appender.LogstashTcpSocketAppender;
 import net.logstash.logback.encoder.LogstashEncoder;
 
@@ -78,11 +83,13 @@ public class LoggingService {
 	 * ({@code TestServerImpl}) continue to compile and run unchanged.
 	 */
 	/**
-	 * Logback is initialised from logback.xml (console) on first logger use. If the LOG_HOST environment variable
+	 * Applies the logging configuration (see {@link #configure()}). If the LOG_HOST environment variable
 	 * (or system property) is set, JSON logs are additionally sent to Logstash at LOG_HOST:LOG_PORT (default port 4560).
 	 * This is configured here rather than with a logback.xml conditional, which needs Janino / changed between logback versions.
 	 */
 	public static void init(final TestServerImpl testServerImpl) {
+		configure();
+		
 		final String logHost = getSetting("LOG_HOST");
 		if (logHost == null || logHost.isBlank()) {
 			return;
@@ -105,6 +112,58 @@ public class LoggingService {
 		
 		loggerContext.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).addAppender(appender);
 		logger(TestServerServiceEnum.TEST_SERVER).info("Sending logs to Logstash at " + destination);
+	}
+	
+	/**
+	 * Name of a Logback configuration file in the working directory that is used if the system property
+	 * <code>logback.configurationFile</code> is not set.
+	 */
+	public final static String LOCAL_CONFIG_FILE = "logback.xml";
+	
+	/**
+	 * Applies the logging configuration and prints which one is used: the file given with
+	 * -Dlogback.configurationFile (loaded by Logback itself), else ./logback.xml, else the built-in
+	 * configuration (console, INFO). Logback silently falls back to the built-in configuration if the
+	 * configured file is missing or unreadable, so this is reported here.
+	 */
+	private static void configure() {
+		final String configured = System.getProperty("logback.configurationFile");
+		if (configured != null) {
+			final File file = new File(configured);
+			if (configured.contains(":/") || file.canRead()) {
+				System.out.println("Logging configuration: " + (configured.contains(":/") ? configured : file.getAbsolutePath()));
+			}
+			else {
+				System.err.println("WARNING: logging configuration " + file.getAbsolutePath() 
+						+ " not found or not readable, using the built-in configuration (console, INFO)");
+			}
+			return;
+		}
+		
+		final File file = new File(LOCAL_CONFIG_FILE);
+		if (!file.isFile()) {
+			System.out.println("Logging configuration: built-in (console, INFO)");
+			return;
+		}
+		
+		final LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
+		try {
+			loggerContext.reset();
+			final JoranConfigurator configurator = new JoranConfigurator();
+			configurator.setContext(loggerContext);
+			configurator.doConfigure(file);
+		}
+		catch (JoranException e) {
+			// reported below
+		}
+		final List<Status> errors = loggerContext.getStatusManager().getCopyOfStatusList().stream()
+				.filter(status -> status.getLevel() == Status.ERROR).toList();
+		if (errors.isEmpty()) {
+			System.out.println("Logging configuration: " + file.getAbsolutePath());
+		}
+		else {
+			errors.forEach(status -> System.err.println("ERROR in " + file.getAbsolutePath() + ": " + status.getMessage()));
+		}
 	}
 	
 	private static String getSetting(final String name) {

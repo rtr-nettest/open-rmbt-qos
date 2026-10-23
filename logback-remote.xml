@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logging configuration for a server that sends its full log to a remote Logstash host:
+  the console (journal under systemd) only gets warnings and errors, everything at INFO goes to
+  Logstash. Copy it as logback.xml into the working directory of the server (it is picked up
+  automatically) and set the remote host in the systemd unit:
+
+    Environment=LOG_HOST=logstash.example.org
+    Environment=LOG_PORT=4560
+
+  The Logstash appender is added by the server itself when LOG_HOST is set (see README, "Logging").
+-->
+<configuration>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>WARN</level>
+        </filter>
+        <encoder>
+            <!-- no timestamp: the journal adds its own -->
+            <pattern>%-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

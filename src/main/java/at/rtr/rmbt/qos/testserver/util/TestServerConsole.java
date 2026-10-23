@@ -419,6 +419,15 @@ public class TestServerConsole extends PrintStream {
 	public static void log(String msg, int verboseLevelNeeded, TestServerServiceEnum service) {
 		LoggingService.info(msg, service);
 	}
+	
+	/**
+	 * logs at debug level (per-connection details that are not needed in normal operation)
+	 * @param msg
+	 * @param service
+	 */
+	public static void debug(String msg, TestServerServiceEnum service) {
+		LoggingService.debug(msg, service);
+	}
 		
 	/**
 	 * 

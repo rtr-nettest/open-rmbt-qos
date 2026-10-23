@@ -40,6 +40,8 @@ RestartSec=5
 # optional periodic restart (here every 180 min)
 #RuntimeMaxSec=180min
 TimeoutStopSec=30
+# Java exits with 143 (128 + SIGTERM) on systemctl stop/restart: a normal stop, not a failure
+SuccessExitStatus=143
 
 # the server logs to stdout/stderr -> journal (journalctl -u open-rmbt-qos)
 StandardOutput=journal

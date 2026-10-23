@@ -18,6 +18,7 @@
 package at.rtr.rmbt.qos.testserver.util;
 
 import java.io.File;
+import java.net.InetAddress;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -100,7 +101,9 @@ public class LoggingService {
 		final LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
 		final LogstashEncoder encoder = new LogstashEncoder();
 		encoder.setContext(loggerContext);
-		encoder.setCustomFields("{\"app_name\":\"qos-service\"}");
+		// same fields as the statistics server: app_name and host (LOGGING_HOST, default: the host name)
+		final String host = getLoggingHost();
+		encoder.setCustomFields("{\"app_name\":\"qos-service\",\"host\":\"" + jsonEscape(host) + "\"}");
 		encoder.start();
 		
 		final LogstashTcpSocketAppender appender = new LogstashTcpSocketAppender();
@@ -111,7 +114,7 @@ public class LoggingService {
 		appender.start();
 		
 		loggerContext.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).addAppender(appender);
-		logger(TestServerServiceEnum.TEST_SERVER).info("Sending logs to Logstash at " + destination);
+		logger(TestServerServiceEnum.TEST_SERVER).info("Sending logs to Logstash at " + destination + " (host=" + host + ")");
 	}
 	
 	/**
@@ -164,6 +167,35 @@ public class LoggingService {
 		else {
 			errors.forEach(status -> System.err.println("ERROR in " + file.getAbsolutePath() + ": " + status.getMessage()));
 		}
+	}
+	
+	/**
+	 * @return the value for the "host" field of the Logstash events: LOGGING_HOST or, if not set, the host name
+	 */
+	private static String getLoggingHost() {
+		final String loggingHost = getSetting("LOGGING_HOST");
+		if (loggingHost != null && !loggingHost.isBlank()) {
+			return loggingHost.trim();
+		}
+		try {
+			return InetAddress.getLocalHost().getHostName();
+		}
+		catch (Exception e) {
+			return "";
+		}
+	}
+	
+	private static String jsonEscape(final String s) {
+		final StringBuilder sb = new StringBuilder();
+		for (char c : s.toCharArray()) {
+			if (c == '"' || c == '\\') {
+				sb.append('\\').append(c);
+			}
+			else if (c >= 0x20) {
+				sb.append(c);
+			}
+		}
+		return sb.toString();
 	}
 	
 	private static String getSetting(final String name) {

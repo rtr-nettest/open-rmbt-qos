@@ -34,6 +34,7 @@ LoadCredential=privkey.pem:/etc/letsencrypt/live/qos.example.org/privkey.pem
 # optional: send JSON logs to Logstash in addition to the journal
 #Environment=LOG_HOST=logstash.example.org
 #Environment=LOG_PORT=4560
+#Environment=LOGGING_HOST=qos1
 
 Restart=always
 RestartSec=5

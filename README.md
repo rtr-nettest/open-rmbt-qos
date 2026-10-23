@@ -380,7 +380,8 @@ LogsDirectory=open-rmbt-qos
 
 If the environment variable `LOG_HOST` (or the system property of that name) is set, the server
 additionally sends JSON logs to Logstash at `LOG_HOST:LOG_PORT` (default port `4560`), tagged with
-`"app_name":"qos-service"`. This is done by the server itself, independently of the Logback
+`"app_name":"qos-service"` and `"host":"<LOGGING_HOST>"` (the same fields as the statistics server; without
+`LOGGING_HOST` the host name of the machine is used). This is done by the server itself, independently of the Logback
 configuration file, and logged at startup (`Sending logs to Logstash at ...`):
 
 ```bash
@@ -393,6 +394,7 @@ In the systemd unit (e.g. with `systemctl edit open-rmbt-qos`):
 [Service]
 Environment=LOG_HOST=logstash.example.org
 Environment=LOG_PORT=4560
+Environment=LOGGING_HOST=qos1
 ```
 
 The receiver must accept JSON lines over TCP (Logstash: `input { tcp { port => 4560 codec => json_lines } }`).

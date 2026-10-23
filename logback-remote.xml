@@ -7,6 +7,7 @@
 
     Environment=LOG_HOST=logstash.example.org
     Environment=LOG_PORT=4560
+    Environment=LOGGING_HOST=qos1      (value of the "host" field; default: the host name)
 
   The Logstash appender is added by the server itself when LOG_HOST is set (see README, "Logging").
 -->

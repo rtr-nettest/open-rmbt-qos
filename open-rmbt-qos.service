@@ -1,12 +1,13 @@
 # systemd unit for the RMBT QoS server.
 #
 # Install (see README, "Installation"):
-#   cp qos-server.service /etc/systemd/system/
+#   cp open-rmbt-qos.service /etc/systemd/system/
 #   systemctl daemon-reload
-#   systemctl enable --now qos-server
+#   systemctl enable --now open-rmbt-qos
 #
-# Adjust User/Group and WorkingDirectory to your installation. The working directory holds
-# RMBTQoSServer.jar and config.properties; the server writes guard.properties there.
+# Adjust User/Group, WorkingDirectory and the certificate paths (LoadCredential) to your
+# installation. The working directory holds RMBTQoSServer.jar and config.properties; the server
+# writes guard.properties there.
 
 [Unit]
 Description=RMBT QoS Server
@@ -19,8 +20,16 @@ Wants=network-online.target
 Type=simple
 User=qos
 Group=qos
-WorkingDirectory=/opt/qos-server
+WorkingDirectory=/opt/open-rmbt-qos
 ExecStart=/usr/bin/java -jar RMBTQoSServer.jar
+
+# TLS certificate and key stay readable by root only: systemd copies them on every start to
+# /run/credentials/open-rmbt-qos.service/, readable by this service only. config.properties:
+#   server.ssl.certificate=/run/credentials/open-rmbt-qos.service/fullchain.pem
+#   server.ssl.key=/run/credentials/open-rmbt-qos.service/privkey.pem
+# After a certificate renewal: systemctl restart open-rmbt-qos (e.g. certbot deploy hook).
+LoadCredential=fullchain.pem:/etc/letsencrypt/live/qos.example.org/fullchain.pem
+LoadCredential=privkey.pem:/etc/letsencrypt/live/qos.example.org/privkey.pem
 
 # optional: send JSON logs to Logstash in addition to the journal
 #Environment=LOG_HOST=logstash.example.org
@@ -29,15 +38,18 @@ ExecStart=/usr/bin/java -jar RMBTQoSServer.jar
 Restart=always
 RestartSec=5
 # optional periodic restart (here every 180 min)
-RuntimeMaxSec=180min
-TimeoutStopSec=60
+#RuntimeMaxSec=180min
+TimeoutStopSec=30
 
-# the server logs to stdout/stderr -> journal (journalctl -u qos-server)
+# the server logs to stdout/stderr -> journal (journalctl -u open-rmbt-qos)
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=open-rmbt-qos
 
 # test ports below 1024 (TCP 21, 25, 80, ...; UDP 53, 123, ...) and the control port 443 need
 # CAP_NET_BIND_SERVICE; grant it to this service only instead of running as root
+# (do not setcap the java binary: that makes java fail with "libjli.so: cannot open shared object
+# file" and would allow every Java program to bind these ports)
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
@@ -47,7 +59,7 @@ LimitNOFILE=65536
 
 # hardening
 ProtectSystem=strict
-ReadWritePaths=/opt/qos-server
+ReadWritePaths=/opt/open-rmbt-qos
 ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true

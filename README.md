@@ -121,30 +121,33 @@ filtering (a filtering firewall would distort the test results). Open/allow:
 
 ```bash
 # 1. service user and directory
-useradd --system --home-dir /opt/qos-server --shell /usr/sbin/nologin qos
-mkdir -p /opt/qos-server
+useradd --system --home-dir /opt/open-rmbt-qos --shell /usr/sbin/nologin qos
+mkdir -p /opt/open-rmbt-qos
 
 # 2. jar (built with "mvn" or downloaded from a release) and configuration
-cp target/RMBTQoSServer.jar config.properties /opt/qos-server/
-chown -R qos:qos /opt/qos-server          # the server writes guard.properties there
-chmod 600 /opt/qos-server/config.properties   # contains the token keys
+cp target/RMBTQoSServer.jar config.properties /opt/open-rmbt-qos/
+chown -R qos:qos /opt/open-rmbt-qos          # the server writes guard.properties there
+chmod 600 /opt/open-rmbt-qos/config.properties   # contains the token keys
 
-# 3. TLS certificate readable by the service user, e.g. via a group
-groupadd -f ssl-cert && usermod -aG ssl-cert qos
-chgrp -R ssl-cert /etc/letsencrypt/live /etc/letsencrypt/archive
-chmod -R g+rX /etc/letsencrypt/live /etc/letsencrypt/archive
+# 3. systemd unit (grants CAP_NET_BIND_SERVICE for ports < 1024, no root needed)
+cp open-rmbt-qos.service /etc/systemd/system/
+#    edit User/Group, WorkingDirectory/ReadWritePaths and the certificate paths (LoadCredential)
 
-# 4. systemd unit (grants CAP_NET_BIND_SERVICE for ports < 1024, no root needed)
-cp qos-server.service /etc/systemd/system/
+# 4. edit the configuration (see below), then start
 systemctl daemon-reload
-systemctl enable --now qos-server
-journalctl -u qos-server -f
+systemctl enable --now open-rmbt-qos
+journalctl -u open-rmbt-qos -f
 ```
 
-Edit `/opt/qos-server/config.properties` before starting:
+Edit `/opt/open-rmbt-qos/config.properties` before starting:
 
 1. `server.ip` — the public test addresses (IPv4 and IPv6, comma-separated),
-2. `server.port`, `server.ssl=true` and `server.ssl.certificate` / `server.ssl.key` (see [TLS](#tls)),
+2. `server.port`, `server.ssl=true` and the certificate. With the systemd unit the certificate and key
+   are passed as credentials, so they can stay readable by root only (see [TLS](#tls)):
+   ```properties
+   server.ssl.certificate=/run/credentials/open-rmbt-qos.service/fullchain.pem
+   server.ssl.key=/run/credentials/open-rmbt-qos.service/privkey.pem
+   ```
 3. `server.secret` / `server.secret.<name>` — the keys of **all measurement servers** the control server
    assigns, as the client presents the token of its speed test (see [Client tokens](#client-tokens)),
 4. the UDP/TCP test ports (`server.udp.*`, `server.tcp.competence.sip`),
@@ -154,8 +157,30 @@ On startup the log shows the version, the settings and `Client token verificatio
 A quick check from another host: `openssl s_client -connect <ip>:443` must show `QoSSP0.1` and
 `ACCEPT [TOKEN string]`; without a valid token the server closes the connection after 10 s.
 
-After a certificate renewal restart the service (`systemctl restart qos-server`, e.g. as a certbot
+After a certificate renewal restart the service (`systemctl restart open-rmbt-qos`, e.g. as a certbot
 deploy hook).
+
+### Troubleshooting the service
+
+Startup errors are printed as one `FATAL: …` line to the journal. `systemctl status` shows only the last
+lines, which after a few restarts are systemd's own messages, so look at the journal:
+
+```bash
+journalctl -u open-rmbt-qos -b --no-pager | grep -v 'systemd\['
+```
+
+| Message | Cause / fix |
+|---|---|
+| `FATAL: cannot read config file config.properties … (Permission denied)` | The config belongs to root. `chown -R qos:qos /opt/open-rmbt-qos`, `chmod 600 config.properties`. |
+| `FATAL: cannot load the TLS certificate/keystore: … (Permission denied)` | The service user cannot read the certificate or key (or a directory on the way, e.g. a `chmod 700` certificate directory). Pass both with `LoadCredential=` and point `server.ssl.certificate`/`server.ssl.key` to `/run/credentials/open-rmbt-qos.service/…`. |
+| `FATAL: cannot bind the control port …` | Another instance (e.g. started manually) or service holds the port, or `AmbientCapabilities=CAP_NET_BIND_SERVICE` is missing. |
+| `libjli.so: cannot open shared object file` | `setcap` was applied to the `java` binary; Java does not start with file capabilities. Remove it: `setcap -r "$(realpath /usr/bin/java)"`, use `AmbientCapabilities` instead. |
+| `Start request repeated too quickly` | systemd gave up after several failed starts. Fix the cause, then `systemctl reset-failed open-rmbt-qos` and start again. |
+
+**Migrating from an older unit** (e.g. a `qos.service` that ran `setcap` on the system `java`, used
+`StandardOutput=null` or `RMBTQoSTestServer.jar`): stop and remove it (`systemctl disable --now qos`,
+delete the unit file, `systemctl daemon-reload`), remove the capability from the `java` binary
+(`setcap -r "$(realpath /usr/bin/java)"`), then install `open-rmbt-qos.service` as above.
 
 ---
 
@@ -278,7 +303,7 @@ e.g. 8723358c-2037-4029-a70c-91e5d9d35cf3_1700000000_oFAdP8+Cw9TqvJOgNc5ABOQRxss
 
 Logging uses **SLF4J + Logback**. The configuration bundled in the jar
 ([`src/main/resources/logback.xml`](src/main/resources/logback.xml)) logs everything at `INFO` to the
-console (stdout) — under systemd that ends up in the journal (`journalctl -u qos-server`).
+console (stdout) — under systemd that ends up in the journal (`journalctl -u open-rmbt-qos`).
 
 ### Loggers
 
@@ -295,7 +320,7 @@ more/less detail.
 ### Own configuration file
 
 To change levels or add appenders, put a Logback configuration next to the jar and pass it with
-`-Dlogback.configurationFile` — e.g. `/opt/qos-server/logback.xml`:
+`-Dlogback.configurationFile` — e.g. `/opt/open-rmbt-qos/logback.xml`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -309,9 +334,9 @@ To change levels or add appenders, put a Logback configuration next to the jar a
 
     <!-- daily rotated log file, kept for 30 days -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>/var/log/qos-server/qos.log</file>
+        <file>/var/log/open-rmbt-qos/qos.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>/var/log/qos-server/qos.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <fileNamePattern>/var/log/open-rmbt-qos/qos.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
             <maxHistory>30</maxHistory>
         </rollingPolicy>
         <encoder>
@@ -334,10 +359,10 @@ With `scan="true"` Logback re-reads the file at runtime, so log levels can be ch
 In the systemd unit:
 
 ```ini
-ExecStart=/usr/bin/java -Dlogback.configurationFile=/opt/qos-server/logback.xml -jar RMBTQoSServer.jar
+ExecStart=/usr/bin/java -Dlogback.configurationFile=/opt/open-rmbt-qos/logback.xml -jar RMBTQoSServer.jar
 # the unit uses ProtectSystem=strict, so the log directory must be writable explicitly:
-ReadWritePaths=/opt/qos-server /var/log/qos-server
-LogsDirectory=qos-server
+ReadWritePaths=/opt/open-rmbt-qos /var/log/open-rmbt-qos
+LogsDirectory=open-rmbt-qos
 ```
 
 ### Logstash
@@ -433,7 +458,15 @@ With `server.ssl=true` the control port speaks TLS. The certificate is read, in 
    server.ssl.key=/etc/letsencrypt/live/example.org/privkey.pem
    ```
    The key has to be an unencrypted PKCS#8 PEM key (`-----BEGIN PRIVATE KEY-----`, as issued by
-   Let's Encrypt; RSA, EC and Ed25519 are supported) and readable by the service user.
+   Let's Encrypt; RSA, EC and Ed25519 are supported) and readable by the server. With
+   `open-rmbt-qos.service` it does not have to be readable by the service user: systemd reads both files as
+   root (`LoadCredential=`) and passes copies that only this service can read, so the configuration
+   points to those copies:
+   ```properties
+   server.ssl.certificate=/run/credentials/open-rmbt-qos.service/fullchain.pem
+   server.ssl.key=/run/credentials/open-rmbt-qos.service/privkey.pem
+   ```
+   The path contains the unit name; adjust it if the unit is named differently.
 2. `server.ssl.keystore` + `server.ssl.keystore.password` (+ optional `server.ssl.keystore.type`) — a
    PKCS12 or JKS keystore, if you already have one,
 3. the legacy classpath resource `/crt/qosserver.jks` inside the jar (only if nothing is configured).
@@ -469,7 +502,7 @@ The server is reachable from the internet and treats all client input as untrust
   responses are only sent to the IP of the control connection (no reflection to third parties).
 - **Logs:** client-supplied strings are logged with control characters replaced (no log injection);
   tokens' HMACs are never echoed to the client.
-- **Operation:** run as an unprivileged user with `CAP_NET_BIND_SERVICE` only (see `qos-server.service`),
+- **Operation:** run as an unprivileged user with `CAP_NET_BIND_SERVICE` only (see `open-rmbt-qos.service`),
   keep the token keys in a `chmod 600` config file.
 
 The limits are constants in `ClientHandler`, `TcpClientHandler`, `SipCompetence` and `LineReader`.
@@ -484,7 +517,7 @@ The limits are constants in `ClientHandler`, `TcpClientHandler`, `SipCompetence`
 - `src/test/java` — JUnit 6 + Mockito tests.
 - `legacy-tests/` — JUnit 4 + JMockit tests, excluded from the build (see `legacy-tests/README.md`).
 - `config.properties` — server configuration.
-- `qos-server.service` — systemd unit (see [Installation](#installation)).
+- `open-rmbt-qos.service` — systemd unit (see [Installation](#installation)).
 - `qos_server.sh` — legacy SysV init script (superseded by the systemd unit).
 - `.github/workflows/build.yml` — build/test on every push, GitHub release on tags.
 - `PROTOCOL.md` — the client/server wire protocol.

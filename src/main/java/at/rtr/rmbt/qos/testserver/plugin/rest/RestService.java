@@ -33,6 +33,7 @@ import at.rtr.rmbt.qos.testserver.ServerPreferences;
 import at.rtr.rmbt.qos.testserver.ServerPreferences.ServiceSetting;
 import at.rtr.rmbt.qos.testserver.ServerPreferences.TestServerServiceEnum;
 import at.rtr.rmbt.qos.testserver.TestServer;
+import at.rtr.rmbt.qos.testserver.TestServerImpl;
 import at.rtr.rmbt.qos.testserver.util.TestServerConsole;
 
 /**
@@ -90,6 +91,13 @@ public class RestService extends ServiceSetting {
 				    parameters.add("keystorePassword", serverPreferences.getSslKeystorePassword());
 				    parameters.add("keyPassword", serverPreferences.getSslKeystorePassword());
 				    parameters.add("keystoreType", serverPreferences.getSslKeystoreType());
+				    // same TLS versions and cipher suites as the control port (no CBC suites)
+				    for (String protocol : TestServerImpl.getTlsProtocols(serverPreferences.isTls13Only())) {
+				    	parameters.add("enabledProtocols", protocol);
+				    }
+				    for (String suite : TestServerImpl.TLS_CIPHER_SUITES) {
+				    	parameters.add("enabledCipherSuites", suite);
+				    }
 			    }
 
 			    component.getDefaultHost().attach("", new RestletApplication());

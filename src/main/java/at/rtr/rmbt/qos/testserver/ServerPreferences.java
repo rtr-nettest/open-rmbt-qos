@@ -104,6 +104,7 @@ public class ServerPreferences {
 	public static final String ARG_NO_TOKEN_CHECK = "-NTC";
 	public static final String ARG_TOKEN_V2_ONLY = "-V2ONLY";
 	public static final String ARG_USE_SSL = "-S";
+	public static final String ARG_TLS13_ONLY = "-TLS13ONLY";
 	public static final String ARG_VERBOSE = "-V";
 	public static final String ARG_VERBOSE2 = "-VV";
 	public static final String ARG_LOG = "-L";
@@ -120,6 +121,7 @@ public class ServerPreferences {
 	public static final String PARAM_SERVER_SSL_KEYSTORE_TYPE = "server.ssl.keystore.type";
 	public static final String PARAM_SERVER_SSL_CERTIFICATE = "server.ssl.certificate";
 	public static final String PARAM_SERVER_SSL_KEY = "server.ssl.key";
+	public static final String PARAM_SERVER_SSL_TLS13_ONLY = "server.ssl.tls13only";
 	public static final String PARAM_SERVER_VERBOSE = "server.verbose";
 	public static final String PARAM_SERVER_UDP_MIN_PORT = "server.udp.minport";
 	public static final String PARAM_SERVER_UDP_MAX_PORT = "server.udp.maxport";
@@ -163,6 +165,7 @@ public class ServerPreferences {
 	private String sslKeystoreType = null;
 	private String sslCertificate = null;
 	private String sslKey = null;
+	private boolean isTls13Only = false;
 	private int verboseLevel = 0;
 	/** keys used to verify client tokens; a token is valid if it was signed with any of them */
 	private final List<SecretKey> secretKeys = new ArrayList<>();
@@ -259,6 +262,9 @@ public class ServerPreferences {
 		    	}
 		    	else if (arg.equals(ARG_USE_SSL)) {
 		    		useSsl = true;
+		    	}
+		    	else if (arg.equals(ARG_TLS13_ONLY)) {
+		    		isTls13Only = true;
 		    	}
 		    	else if (arg.equals(ARG_VERBOSE)) {
 		    		verboseLevel = 1;
@@ -446,6 +452,11 @@ public class ServerPreferences {
 	   		param = prop.getProperty(PARAM_SERVER_TOKEN_V2_ONLY);
 	   		if (param!=null) {
 		   		isTokenV2Only = Boolean.parseBoolean(param.trim());
+	   		}
+
+	   		param = prop.getProperty(PARAM_SERVER_SSL_TLS13_ONLY);
+	   		if (param!=null) {
+		   		isTls13Only = Boolean.parseBoolean(param.trim());
 	   		}
 
 	   		param = prop.getProperty(PARAM_SERVER_COMMAND_CONSOLE);
@@ -706,6 +717,17 @@ public class ServerPreferences {
 	}
 	
 	/**
+	 * @return true if TLS 1.2 is disabled and only TLS 1.3 is offered (<code>server.ssl.tls13only</code> or <code>-tls13only</code>)
+	 */
+	public boolean isTls13Only() {
+		return isTls13Only;
+	}
+
+	public void setTls13Only(boolean isTls13Only) {
+		this.isTls13Only = isTls13Only;
+	}
+	
+	/**
 	 * 
 	 * @return
 	 */
@@ -817,6 +839,7 @@ public class ServerPreferences {
 		System.out.println("-u [min_port_number] [max_port_number] => supported udp port range by this server: from min_port_number to max_port_number (both inclusive).");
 		System.out.println("-t [max_threads] => The max number of threads (clients) this server can handle at the same time (default: 100).");
 		System.out.println("-k [secret_key] => A secret key used to verify client tokens (may be repeated or a comma separated list).");
+		System.out.println("-tls13only => offer only TLS 1.3 on the control port, no TLS 1.2 (config: server.ssl.tls13only=true).");
 		System.out.println("-v2only => accept only v2 tokens (bound to the client IP), reject legacy v1 tokens (config: server.token.v2only=true).");
 		System.out.println("-ntc => do not verify client tokens (INSECURE, lab/testing only; config: server.token.check=false).");
 		System.out.println("\nExample: -p 5234 -u 10000 20000 => makes the server listen on port 5234 for incoming test requests and let it accept udp test connections on ports 10000 to 20000 (inclusive).");
@@ -957,6 +980,7 @@ public class ServerPreferences {
 				+ udpPortSet + ", maxThreads=" + maxThreads + ", maxConnectionsPerIp=" + maxConnectionsPerIp + ", useSsl="
 				+ useSsl + ", sslKeystore=" + (sslCertificate != null ? sslCertificate + " + " + sslKey 
 						: sslKeystore != null ? sslKeystore : "classpath:" + TestServer.QOS_KEY_FILE)
+				+ ", isTls13Only=" + isTls13Only
 				+ ", verboseLevel=" + verboseLevel + ", secretKey="
 				+ secretKeys + ", isTokenCheck=" + isTokenCheck + ", isTokenV2Only=" + isTokenV2Only + ", isIpCheck=" + isIpCheck
 				+ ", isLoggingEnabled=" + isLoggingEnabled

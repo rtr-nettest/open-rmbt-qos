@@ -153,6 +153,13 @@ public class ServerPreferencesTest {
 		
 		sp = new ServerPreferences(new java.io.ByteArrayInputStream("server.token.v2only=true\n".getBytes()));
 		assertTrue(sp.isTokenV2Only(), "v2 only from config");
+		assertFalse(sp.isTls13Only(), "TLS 1.3 only is off by default");
+		
+		sp = new ServerPreferences(new String[] {"-k", "a", "-tls13only"});
+		assertTrue(sp.isTls13Only(), "TLS 1.3 only from arguments");
+		
+		sp = new ServerPreferences(new java.io.ByteArrayInputStream("server.ssl.tls13only=true\n".getBytes()));
+		assertTrue(sp.isTls13Only(), "TLS 1.3 only from config");
 	}
 
 	@Test

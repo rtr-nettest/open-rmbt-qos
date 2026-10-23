@@ -182,6 +182,7 @@ single `FATAL: …` line and the process exits with code `1` (so systemd and scr
 | `server.ssl` | `true`/`false`. Wrap the control port in TLS (certificate source: see the next rows) (see [TLS](#tls)). |
 | `server.ssl.certificate` / `server.ssl.key` | PEM certificate chain (e.g. Let's Encrypt `fullchain.pem`) and unencrypted PKCS#8 PEM private key (`privkey.pem`). Takes precedence over a keystore. Restart the server after a certificate renewal. |
 | `server.ssl.keystore` / `server.ssl.keystore.password` / `server.ssl.keystore.type` | Alternatively a JKS or PKCS12 keystore file (type derived from the `.p12`/`.pfx` extension if not set). If neither PEM files nor a keystore are configured, the keystore is loaded from `/crt/qosserver.jks` inside the jar. |
+| `server.ssl.tls13only` | `true` / `false` (default). Offer only TLS 1.3 and disable TLS 1.2. Same as `-tls13only`. See [TLS](#tls). |
 | `server.threads` | Size of the fixed worker thread pool = max simultaneous control connections. Minimum 5 (startup fails below that); a warning is printed at ≤ 10. Newer clients open one connection per test (~25 per test run), so use e.g. `200`. |
 | `server.connections.perip` | Max simultaneous control connections from one client IP (default `50`); further connections are closed right away. Keep it well below `server.threads` so a single host cannot occupy all workers. |
 | `server.ip.check` | `true`/`false`. If true, only client IPs registered during test setup receive responses (a per-IP candidate map is enforced). |
@@ -236,6 +237,7 @@ not loaded automatically (use `-f` to load one).
 | `-ip <ip>` | Bind interface IP (repeatable). |
 | `-ic` | Enable the client IP check (`server.ip.check`). |
 | `-s` | Enable TLS on the control port. |
+| `-tls13only` | Offer only TLS 1.3 (`server.ssl.tls13only=true`). |
 | `-v2only` | Accept only v2 tokens (`server.token.v2only=true`). |
 | `-ntc` | Disable client-token verification (`server.token.check=false`). Insecure, lab/testing only. |
 | `-k <secret>` | HMAC secret key(s); may be repeated or a comma-separated list — required by default for token verification (see the `server.secret` note above). |
@@ -436,8 +438,12 @@ With `server.ssl=true` the control port speaks TLS. The certificate is read, in 
    PKCS12 or JKS keystore, if you already have one,
 3. the legacy classpath resource `/crt/qosserver.jks` inside the jar (only if nothing is configured).
 
-Restart the server after a certificate renewal (e.g. from a certbot deploy hook). Protocol versions and
-cipher suites are the JDK defaults (TLS 1.2/1.3). Clients are authenticated by their token, not by
+Restart the server after a certificate renewal (e.g. from a certbot deploy hook). The server offers only
+TLS 1.3 and TLS 1.2. TLS 1.2 is limited to ECDHE cipher suites with AES-GCM or ChaCha20-Poly1305
+(`TestServerImpl.TLS_CIPHER_SUITES`). CBC suites are not offered: they are padding oracles (POODLE-TLS,
+GOLDENDOODLE), which SSL Labs grades "F". With `server.ssl.tls13only=true` (or `-tls13only`) only TLS 1.3
+is offered. Only do this if all clients support TLS 1.3 (Android 10+, iOS 12.2+, Java 11+, OpenSSL 1.1.1+);
+older clients then fail the TLS handshake. Clients are authenticated by their token, not by
 client certificates, so none are requested.
 
 The REST interface (`server.service.rest.ssl=true`) only supports a keystore file (`server.ssl.keystore`).

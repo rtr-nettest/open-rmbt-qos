@@ -40,6 +40,7 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -55,6 +56,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
 
@@ -92,6 +94,58 @@ public class TestServerImpl {
     public volatile List<ServerSocket> serverSocketList = new ArrayList<ServerSocket>();
 	
 	public SSLServerSocketFactory sslServerSocketFactory;
+	
+	/**
+	 * TLS versions offered on the control port
+	 */
+	public static final String[] TLS_PROTOCOLS = {"TLSv1.3", "TLSv1.2"};
+	
+	/**
+	 * TLS versions offered with <code>server.ssl.tls13only</code>
+	 */
+	public static final String[] TLS_PROTOCOLS_TLS13_ONLY = {"TLSv1.3"};
+	
+	/**
+	 * @param tls13Only
+	 * @return {@link #TLS_PROTOCOLS_TLS13_ONLY} or {@link #TLS_PROTOCOLS}
+	 */
+	public static String[] getTlsProtocols(boolean tls13Only) {
+		return tls13Only ? TLS_PROTOCOLS_TLS13_ONLY : TLS_PROTOCOLS;
+	}
+	
+	/**
+	 * TLS cipher suites offered on the control port, in order of preference: TLS 1.3 suites and TLS 1.2
+	 * ECDHE suites with AEAD only. CBC suites are not offered (padding-oracle attacks like POODLE-TLS,
+	 * GOLDENDOODLE, Zombie POODLE; SSL Labs grades CBC padding oracles "F"), neither are suites without
+	 * forward secrecy. Suites the JDK does not support are skipped.
+	 */
+	public static final String[] TLS_CIPHER_SUITES = {
+			"TLS_AES_256_GCM_SHA384",
+			"TLS_AES_128_GCM_SHA256",
+			"TLS_CHACHA20_POLY1305_SHA256",
+			"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+			"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+			"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+			"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+			"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+	};
+	
+	/**
+	 * Restricts a TLS server socket to {@link #TLS_PROTOCOLS} (or only TLS 1.3) and {@link #TLS_CIPHER_SUITES}
+	 * (only those the JDK supports) and makes the server's cipher suite order take precedence.
+	 * @param socket
+	 * @param tls13Only offer TLS 1.3 only
+	 */
+	public static void configureTls(SSLServerSocket socket, boolean tls13Only) {
+		final Set<String> supportedProtocols = Set.of(socket.getSupportedProtocols());
+		final Set<String> supportedSuites = Set.of(socket.getSupportedCipherSuites());
+		final SSLParameters params = socket.getSSLParameters();
+		params.setProtocols(Arrays.stream(getTlsProtocols(tls13Only)).filter(supportedProtocols::contains).toArray(String[]::new));
+		params.setCipherSuites(Arrays.stream(TLS_CIPHER_SUITES).filter(supportedSuites::contains).toArray(String[]::new));
+		params.setUseCipherSuitesOrder(true);
+		socket.setSSLParameters(params);
+	}
 	public ServerPreferences serverPreferences;
 	public final ServiceManager serviceManager = new ServiceManager();
 	
@@ -178,6 +232,7 @@ public class TestServerImpl {
 		}
 		else {
 			socket = sslServerSocketFactory.createServerSocket();
+			configureTls((SSLServerSocket) socket, serverPreferences.isTls13Only());
 		}
 		
 		try {
@@ -362,12 +417,15 @@ public class TestServerImpl {
 	            sslContext.init(kmf.getKeyManagers(), null, new SecureRandom());
 	            
 				sslServerSocketFactory = (SSLServerSocketFactory) sslContext.getServerSocketFactory();    	
+				TestServerConsole.log("TLS enabled: " + String.join(", ", getTlsProtocols(serverPreferences.isTls13Only())), 
+						-1, TestServerServiceEnum.TEST_SERVER);
 		    }
 		    
 			for (InetAddress addr : serverPreferences.getInetAddrBindToSet()) {
 				ServerSocket serverSocket;
 				if (serverPreferences.useSsl()) {
 			    	serverSocket = (SSLServerSocket) sslServerSocketFactory.createServerSocket();
+			    	configureTls((SSLServerSocket) serverSocket, serverPreferences.isTls13Only());
 				}
 				else {
 					serverSocket = new ServerSocket();
